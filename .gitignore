@@ -1,0 +1,35 @@
+﻿# Python
+.venv/
+__pycache__/
+*.pyc
+# Gizli bilgiler — ASLA commit etme
+.env
+secrets/
+*token*.json
+*client_secret*.json
+# Üretim çıktıları ve büyük dosyalar
+output/
+models/
+vendor/
+data/
+.cache/
+.tmp/
+input_footage/
+*.wav
+*.mp3
+*.mp4
+*.srt
+*.log
+*.fbx
+*.blend
+# Kişisel varlıklar (ses referansı, yüz fotoğrafları, ikiz çekimi)
+assets/voice_reference/*
+assets/avatar/
+assets/twin/
+!assets/voice_reference/.gitkeep
+# Remotion
+node_modules/
+remotion/.remotion/
+remotion/public/auto/
+remotion/public/sfx/
+.DS_Store

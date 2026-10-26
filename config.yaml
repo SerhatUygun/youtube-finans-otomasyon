@@ -1,0 +1,682 @@
+﻿# Pipeline konfigürasyonu — Faz 1 (script -> TTS -> altyazı -> sabit görselli montaj -> metadata -> YouTube taslak)
+
+llm:
+  provider: claude
+  # claude-haiku-4-5: en düşük maliyetli model — kısa/test videoları için yeterli.
+  # Tam metraj (3-5dk) videolarda daha zengin anlatım için claude-sonnet-5'e geçebilirsin.
+  # (.env'de OMNIROUTE_API_KEY BOŞSA kullanılır — doğrudan Anthropic API.)
+  model: claude-sonnet-5
+  # .env'de OMNIROUTE_API_KEY DOLUYSA kullanılır — OmniRoute'un ücretsiz/dayanıklı
+  # model havuzu, hiçbir Anthropic kredisi harcamadan. "auto" kalite öncelikli dengeli
+  # seçim yapar; alternatifler: auto/best-free (en kaliteli ücretsiz), auto/smart.
+  omniroute_model: auto
+  max_tokens: 8000
+  # ~2.4 kelime/sn İngilizce anlatım. YATAY (16:9) uzun form kanalı.
+  #   TEST modu  : ~2 dk  ≈ 288 kelime  (hızlı deneme, varsayılan)
+  #   REAL modu  : 8-10 dk ≈ 1150-1440 kelime (yayın; gerçek uzunluk)
+  # ŞU AN: 2 dakikalık YATAY test videoları. Real moda geçince target_words: 1300 yap.
+  target_words: 1300
+
+# Öğrenen beyin katmanı — öz-değerlendirme (critic) + hafıza + kapalı öğrenme döngüsü.
+# Hepsi yerel qwen3 (sıfır API maliyeti). output/_brain/ boşken davranış eskisiyle aynıdır.
+brain:
+  # Critic overall (0-10) bu eşiğin ALTINDAysa script render'dan önce 1 kez yeniden üretilir.
+  critic_threshold: 6.5
+  # Zayıf script için en fazla kaç yeniden-üretim denemesi (süreyi sınırlamak için 1 önerilir).
+  critic_retries: 1
+  # Otonom döngü her N. videodan sonra refleksiyon çalıştırır (learned_guidance güncellenir).
+  reflect_every: 10
+  # Üretim prompt'una eklenecek "mükemmel örnek" (few-shot) sayısı.
+  fewshot_k: 1
+
+tts:
+  # engine: cosyvoice (ÖNERİLEN — en akıcı/doğal, çok dilli, güçlü Türkçe zero-shot klonlama;
+  #         izole venv vendor/CosyVoice + subprocess; scripts/setup_cosyvoice.ps1)
+  #       | xtts_v2 (Coqui, in-process, iyi Türkçe) | f5tts (izole venv vendor/F5-TTS).
+  # 5 Ağu: "Finans Kanalı" TR kanalı için CosyVoice2'ye geçildi (daha akışkan seslendirme).
+  # 8 Ağu: CosyVoice2'nin metin frontend'i bu makinede yüklenemiyor (modelscope.cn 403 ->
+  # "no frontend is avaliable"); frontend'siz kalınca ürettiği ses TAMAMEN ANLAŞILMAZ çıktı
+  # (whisper ile doğrulandı: 15dk'lık haftalık özet videosunun sesi neredeyse hiç konuşma
+  # olarak tanınamadı). xtts_v2'ye geri dönüldü — aynı speaker_wav ile whisper %99 güvenle
+  # "tr" olarak doğruladı ve anlaşılır çıktı verdi.
+  # 24 Eyl: VoxCPM2'ye geçildi. tools/compare_tts_engines.py ile aynı 4 Türkçe finans cümlesi:
+  # VoxCPM2 whisper'da %100 kelime doğruluğu; XTTS-v2 %97.6 (cümle sonlarına anlamsız
+  # "inar"/"müntiyi" ekledi). Geri dönmek için: engine: xtts_v2
+  engine: voxcpm
+  model_name: tts_models/multilingual/multi-dataset/xtts_v2
+  # --- cosyvoice2 (scripts/setup_cosyvoice.ps1; Blackwell için torch cu128) ---
+  cosy_venv_python: vendor/CosyVoice/.venv/Scripts/python.exe
+  cosy_repo_dir: vendor/CosyVoice
+  cosy_model_dir: vendor/CosyVoice/pretrained_models/CosyVoice2-0.5B
+  # cosy_ref_text: speaker_wav'daki konuşmanın BİREBİR metni (zero-shot klonlama için şart).
+  # Boşsa run_cosyvoice.py referans sesi faster-whisper ile otomatik yazıya döker.
+  # 7 Ağu: assets/voice_reference/.cache/sample_clip_*.wav (25sn referans klip) faster-whisper
+  # ile bir kez transkript edildi ve buraya sabitlendi — her segment sentezinde tekrar eden
+  # transkripsiyon + modelscope ağ kontrolünü kaldırır (150+ segmentlik haftalık videoda önemli
+  # zaman/güvenilirlik kazancı). Referans klip değişirse bu metin yeniden üretilmeli.
+  cosy_ref_text: ""   # referans ses kaydının birebir metni
+  cosy_stream: false            # false = tam cümle sentezi (daha kararlı); true = düşük gecikme
+  cosy_speed: 1.0               # 0.9-1.1 arası tempo ince ayarı
+  # --- voxcpm (24 Eyl; scripts/setup_voxcpm.ps1) — VoxCPM2, Türkçe dahil 30 dil, 48kHz ---
+  voxcpm_venv_python: vendor/VoxCPM/.venv/Scripts/python.exe
+  voxcpm_model: openbmb/VoxCPM2
+  voxcpm_cfg: 2.0               # yüksek = metne/referansa daha sadık
+  voxcpm_steps: 10              # yüksek = daha kaliteli ama yavaş
+  # Doluysa "ultimate cloning" (referans ses + birebir transkript). Referans klip aynı olduğu
+  # için cosy_ref_text ile aynı metin kullanılabilir; boşsa yalnızca referans sesle klonlar.
+  voxcpm_ref_text: ""
+  # --- f5tts (yedek; scripts/setup_f5tts.ps1) ---
+  f5_venv_python: vendor/F5-TTS/.venv/Scripts/python.exe
+  f5_model: F5TTS_v1_Base
+  f5_ref_text: ""
+  # tr: "Finans Kanalı" Türkçe finans kanalı — CosyVoice aynı speaker_wav klonuyla Türkçe konuşur.
+  language: tr
+  speaker_wav: assets/voice_reference/sample.wav   # kendi ses örneğin (10-30 sn, temiz kayıt)
+  device: cuda
+
+  # 1 Ağu: SESLENDİRME TAKILMALARI FİX. XTTS'te kelime tekrarı / kekeleme / uzun
+  # "ııı" sesleri (takılma) iki şeyden gelir: (1) repetition_penalty düşükse decoder
+  # kendini tekrarlar; (2) uzun bir segment tek parça sentezlenirse model bozulur.
+  # Aşağıdaki parametreler s02_tts.py'de her segment sentezine geçirilir.
+  # split_sentences: segment cümlelere bölünüp ayrı sentezlenir (uzun metin takılmasını önler)
+  split_sentences: true
+  # repetition_penalty: tekrarı/kekelemeyi bastırır (2=zayıf, 10=agresif). 6-8 tatlı nokta.
+  repetition_penalty: 7.0
+  # temperature: düşük = daha kararlı/az rastgele okuma (0.65-0.75 önerilir)
+  temperature: 0.70
+  length_penalty: 1.0
+  top_k: 50
+  top_p: 0.85
+  # speed: 1.0 normal; 0.95-1.05 arası küçük ayarla tempo doğallaştırılabilir
+  speed: 1.0
+  # segmentler arası duraklama (ms). Çok uzunsa "kesik kesik/takık" hissi verir.
+  # 31 Tem'de 350 idi; daha akıcı geçiş için 220'ye çekildi.
+  segment_pause_ms: 220
+
+subtitles:
+  # engine: faster-whisper (varsayılan) | whisperx (wav2vec2 forced-alignment -> <100ms kelime
+  # senkronu; karaoke/kelime-vurgu için daha kesin). NOT: altyazı TERCİHEN script-timing'den
+  # üretilir (bkz. bu dosyanın s06 açıklaması), bu motor yalnızca elle-ses YEDEK yolunda çalışır.
+  # whisperx için: scripts/setup_whisperx.ps1 (ana venv'e pip install whisperx).
+  engine: faster-whisper
+  model_size: large-v3
+  compute_type: int8
+  device: cuda
+  language: tr
+  # 31 Tem (akşam): altyazı artık kelime-seviyesi zamanlamayla küçük parçalar halinde akıyor.
+  # Her altyazı bloğu bu kadar kelime içerir (3-4 önerilir) ve kendi başlangıç/bitiş saniyesine
+  # sahiptir -> "toplu 2 cümle" yerine hızlı, senkron, kısa bloklar. 0/1 verilirse tek kelime.
+  words_per_cue: 3
+
+avatar:
+  # 31 Tem: AI-üretimi tutarlı karakter (assets/avatar/photo.png, yeşil ekran) + wav2lip
+  # lip-sync entegre edildi. lip-sync motoru DOĞRULANANA kadar enabled=false kalır
+  # (pipeline karaktersiz çalışmaya devam eder). Doğrulandıktan sonra true yap.
+  # 31 Tem (akşam): SadTalker PARÇALI render eklendi (paste_pic donması çözüldü) —
+  # gerçekçi + mimikli karakter için açıldı.
+  # 1 Ağu: KULLANICI İSTEĞİ — karakter ekrandan KALDIRILDI (enabled=false). Mevcut
+  # SadTalker/wav2lip karakteri ekranın ortasında iyi durmuyordu; yerine başka bir
+  # eklenti / 3B model çözümü aranacak. false iken s03 atlanır, avatar.mp4 üretilmez,
+  # s07 overlay'i tamamen atlar -> video = arka plan + altyazı + seslendirme.
+  # Yeni karakter çözümü hazır olunca true yap.
+  # 18 Ağu (gece) — İKİ motor da bu makinede DOĞRULANAMADI, enabled=false'a düşüldü:
+  #   - echomimic: 6sn'lik smoke test'te bile model yükleme sırasında boş RAM 9.4GB'den
+  #     1.7GB'a düştü; kaynak izleyici doğru şekilde durdurdu (sistem KİLİTLENMEDİ — 18 Ağu
+  #     PC çökmesinden sonra eklenen güvenlik önlemi ÇALIŞTI), ama render tamamlanamadı.
+  #     Makine toplam 16GB RAM'e sahip; EchoMimic'in çoklu-model (ref-unet+denoise-unet+
+  #     motion+audio) ayak izi burada yapısal olarak sığmıyor — chunk/poz küçültme (bkz.
+  #     echomimic_max_chunk_frames) VRAM'i düzeltti ama RAM tavanını çözmedi.
+  #   - musetalk: ModuleNotFoundError: mmcv._ext — venv'teki mmcv 2.1.0, torch 2.11+cu128
+  #     için derlenmiş CUDA eklentisine sahip değil (muhtemelen bu çok yeni torch/cuda
+  #     kombinasyonu için resmi mmcv wheel'i yok). Kaynak kodundan yeniden derleme gerekir,
+  #     gündüz elle yapılmalı (unattended riskli).
+  #   - wav2lip/sadtalker: vendor/ altında repo/venv hiç kurulu değil.
+  # Video BUGÜN avatarsız (arka plan+altyazı+ses) üretildi; karakter hazır olunca true yap.
+  enabled: false
+  # engine: echomimic (ÖNERİLEN — EchoMimic V2, ses-güdümlü yarım-boy sunucu; en doğal
+  #         mimik+jest, izole venv vendor/EchoMimic V2 + subprocess; scripts/setup_echomimic.ps1)
+  #       | musetalk (VAE ağız inpaint) | wav2lip (basit) | sadtalker (mimik+baş, ağız bulanık)
+  #       | latentsync (29 Eyl: DİJİTAL İKİZ — kendi taban çekimin + ses, bkz. twin: bölümü)
+  engine: latentsync
+  # --- echomimic v2 (scripts/setup_echomimic.ps1; Blackwell için torch cu128) ---
+  echomimic_venv_python: vendor/EchoMimicV2/.venv/Scripts/python.exe
+  echomimic_repo_dir: vendor/EchoMimicV2
+  echomimic_steps: 30           # difüzyon adımı (kalite/hız; 20-40 makul)
+  echomimic_cfg: 2.5            # yönlendirme gücü
+  echomimic_fps: 24
+  echomimic_ref_image: assets/avatar/photo.png   # sunucu referans görseli (yarım-boy)
+  # 18 Ağu OLAYI: otomatik poz seçimi en UZUN pozu (336 kare) seçiyordu -> tek diffusion
+  # batch'i 16GB VRAM'i aşıp sisteme swap'lattı, adım süresi 290s->946s'ye fırladı, PC
+  # tamamen kilitlenip donanım seviyesinde yeniden başlatılmak zorunda kaldı (bkz. hafıza
+  # notu echomimic-crash-18agu). Artık bu tavanı AŞMAYAN en uzun poz seçilir (~97 kare =
+  # ~4sn/parça @24fps) -> daha küçük/güvenli VRAM batch'i, karşılığında daha fazla parça
+  # (model bir kez yüklendiği için ek parça maliyeti düşük).
+  echomimic_max_chunk_frames: 100
+  # Render sırasında her ~2sn'de bir ölçülür (bkz. s03_avatar._wait_render_process). Boş
+  # RAM/VRAM bu eşiklerin altına 3 ölçüm (~6sn) üst üste düşerse süre dolmasını BEKLEMEDEN
+  # process ağacı anında öldürülür -> sistem tıkanmadan/donmadan önce durdurulur.
+  min_free_ram_gb: 2.5
+  min_free_vram_gb: 1.0
+  # --- musetalk v1.5 (scripts/setup_musetalk.ps1 ile kurulur; Blackwell için torch cu128) ---
+  musetalk_venv_python: vendor/MuseTalk/.venv/Scripts/python.exe
+  musetalk_repo_dir: vendor/MuseTalk
+  musetalk_unet_model: vendor/MuseTalk/models/musetalkV15/unet.pth
+  musetalk_unet_config: vendor/MuseTalk/models/musetalkV15/musetalk.json
+  musetalk_bbox_shift: 0        # ağız/çene kutusunu dikey kaydırır (+ = daha açık ağız); v1.5'te 0 iyi başlangıç
+  musetalk_fps: 25              # çıktı kare hızı (s07 zaten hedef fps'e uyarlar)
+  musetalk_batch_size: 4        # 16GB'da güvenli; OOM olursa 2 yap
+  musetalk_use_float16: true    # yarı hassasiyet -> 16GB'da hız/bellek
+  # --- wav2lip (scripts/setup_wav2lip.ps1 ile kurulur) ---
+  wav2lip_venv_python: vendor/Wav2Lip/.venv/Scripts/python.exe
+  wav2lip_repo_dir: vendor/Wav2Lip
+  wav2lip_checkpoint: vendor/Wav2Lip/checkpoints/wav2lip_gan.pth
+  wav2lip_resize_factor: 1
+  # --- sadtalker (izole venv, vendor/SadTalker) ---
+  photo: assets/avatar/photo.png
+  venv_python: vendor/SadTalker/.venv310/Scripts/python.exe
+  repo_dir: vendor/SadTalker
+  still_mode: true       # kafa hareketini sınırlı tutar, daha "stüdyo" görünümü verir (false: canlı ama titreyebilir)
+  # mimik gücü: 1.0 varsayılan (donuk), 1.15 daha canlı ağız/yüz — "yapmacık" hissini azaltır
+  expression_scale: 1.15
+  pose_style: 0          # 0-45 arası kafa poz deseni (yalnızca still_mode: false iken belirgin)
+  # ref_eyeblink: assets/avatar/blink_ref.mp4   # doğal göz kırpma için kısa referans klip (opsiyonel)
+  # ref_pose: assets/avatar/pose_ref.mp4        # doğal kafa hareketi için referans klip (opsiyonel)
+  preprocess: full        # full: omuz/gövde dahil; crop: sadece yüz
+  enhancer: gfpgan        # yüz netleştirme (GFPGANv1.4 ilk çalışmada ~350MB iner). Kalite önceliği için açık.
+  # face_size 512, 256'ya göre ~4x daha yavaş render (16GB'de ~9x gerçek-zaman).
+  # 1 Ağu: DOĞRULAMA için 256 (hızlı kompozisyon kontrolü). Kompozisyon face_size'dan
+  # bağımsız (aynı foto/montaj); gfpgan enhancer yüzü zaten yüksek çözünürlükte restore
+  # ediyor -> 256+gfpgan gerçekçi "tatlı nokta". KUSURSUZ HERO için 512'ye çıkar.
+  face_size: 256
+  batch_size: 4           # face_size=256 -> 16GB VRAM'de batch 4 güvenli (512'ye dönersen 2 yap)
+  # PARÇALI RENDER (donma fix): paste_pic adımı kare sayısıyla superlineer yavaşladığı için
+  # uzun ses bu süreyi aşan parçalara bölünür, her parça ayrı SadTalker koşusunda render edilir
+  # ve klipler birleştirilir. Böylece her koşu kısa/sınırlı kalır -> "saatlerce takılma" olmaz.
+  # 0 verilirse parçalama kapanır (tek koşu, eski davranış). 45-75 arası makul.
+  sadtalker_max_chunk_seconds: 60
+  # BİLİNEN SORUN: render (Face Renderer) %100'e ulaştıktan sonra SadTalker'ın kendi
+  # video yazma/paste_pic adımı bazı ortamlarda saatlerce çıktısız takılabiliyor
+  # (bkz. README "Bilinen Sorunlar"). Render ~11dk sürdüğü için 15dk makul bir üst
+  # sınır: normal tamamlanan bir işi kesmeden, gerçekten takılan işi hızlıca durdurur.
+  max_render_minutes: 40   # 512 + gfpgan enhancer belirgin şekilde yavaş; 30sn Shorts için yeterli pay (256'ya dönersen 15'e çekebilirsin)
+
+visuals:
+  # FLUX.1-schnell HuggingFace'te "gated" (hesap + lisans onayı + HF_TOKEN gerektirir).
+  # Token eklenene kadar kimlik doğrulama istemeyen SDXL kullanılıyor; token eklenince
+  # engine: flux-schnell, model_name: black-forest-labs/FLUX.1-schnell, steps: 4, guidance: 0.0 yap.
+  engine: sdxl
+  # 31 Tem: "sulu boya" görünüm -> FOTO-GERÇEKÇİ checkpoint (RealVisXL V4.0, SDXL fine-tune).
+  # scripts/download_realvis.py ile models/'e indirilir; aynı AutoPipeline ile yüklenir (kod değişmez).
+  # Geri dönmek için: stabilityai/stable-diffusion-xl-base-1.0
+  model_name: models/RealVisXL_V4.0
+  # 1344x768: SDXL'in YATAY (16:9) eğitim kovalarından — s07 1920x1080'e ölçeklerken
+  # keskin kalır. (Dikey Shorts döneminden kalan eski değer: 768x1344 — artık kullanılmıyor.)
+  resolution: [1344, 768]
+  num_inference_steps: 40   # 31 Tem: kalite önceliği -> 40 adım (eski 30)
+  guidance_scale: 7.0     # SDXL için 6-8 arası; 0.0 SADECE flux-schnell içindir
+  # negative_prompt: burada verilmezse s04_visuals içindeki kapsamlı varsayılan kullanılır
+  # seed: 42              # verilirse üretim tekrarlanabilir olur (segment başına seed+i)
+
+  # "Ensemble of expert denoisers" (Stability AI'nin resmi yüksek kalite yöntemi):
+  # base model adımların ilk %80'ini atıp bir latent üretir, refiner kalan %20'yi
+  # tamamlayıp ince detay/dokuyu belirgin iyileştirir. Toplam adım sayısı (steps)
+  # ikisi arasında bölündüğü için tek pipe'lı üretimden çok daha yavaş DEĞİL —
+  # sadece bir kez ekstra ~6GB model indirir/yükler. Kapatmak için false yap.
+  use_refiner: true
+  # Lokal yol: hub cache'in Windows symlink gereksinimi (WinError 1314) nedeniyle
+  # model scripts/download_refiner.py ile models/ altına indirildi.
+  refiner_model_name: models/sdxl-refiner-1.0
+  refiner_high_noise_frac: 0.8   # base'in üstleneceği adım oranı; 0.7-0.85 arası makul
+
+  video_broll:
+    # Faz 3 — en ağır aşama. max_clips ile sınırlı tut.
+    # 31 Tem (akşam): KARAKTER-ODAKLI test için KAPALI. Karakter tüm ekranda ortada
+    # olduğu için arka plan çoğunlukla onun arkasında kalıyor; statik foto-gerçekçi
+    # görsel + Ken Burns arka plan olarak yeterli ve render'ı saatlerce kısaltıyor.
+    # Hero/yayın kalitesinde hareketli arka plan istenirse tekrar true yap.
+    # 5 Ağu: "en ileri seviye 4dk test" (Altın vs enflasyon, TR) — AÇILDI (max_clips=12 dengeli).
+    # 18 Ağu (gece): max_clips=4'e düşürülmesine rağmen WAN 4/4 klipte (3'ü zaten diskte
+    # sorunsuz duruyordu) boş RAM'i dakikalar içinde 1.2GB'den 0.86GB'a düşürmeye devam etti
+    # (muhtemelen klipler arası tam boşalmayan bir sızıntı, bkz. vram-local-var-reference-leak
+    # notu — aynı desen RAM'de de olabilir). Sistem yanıt verirken proaktif olarak süreç
+    # sonlandırıldı (RAM 12GB'a geri döndü) — EchoMimic'teki gibi asıl kilitlenmeye varmadan.
+    # Bu makinede video_broll (ne WAN ne LTX — LTX indirilmemiş) şu an güvenilir değil ->
+    # KAPATILDI, statik foto-gerçekçi görsel + Ken Burns'e düşüldü (kanıtlanmış güvenli yol).
+    # Düzeltme fikri: s03_avatar._wait_render_process'teki gibi s05'e de aktif RAM/VRAM
+    # izleyici + klipler arası açık VRAM/RAM temizliği eklenmeli (gündüz, kullanıcı nezaretinde).
+    # 17 Eyl (test): FramePack'i (sabit ~6GB VRAM, önceki gece kuruldu ama hiç orchestrator
+    # üzerinden denenmedi) gerçek bir job'da doğrulamak için AÇILDI + engine framepack'e alındı.
+    # wan-i2v/ltx-i2v HALA riskli kabul ediliyor (RAM sızıntısı/aşırı VRAM geçmişi) — onlara dönülmedi.
+    # 17 Eyl (öğlen sonrası): FramePack gerçek bir job'da (altın/gümüş) test edildi -> 4
+    # segmentin 4'ünde de model YÜKLENİRKEN (henüz üretim başlamadan) sessizce kesildi, hiç
+    # klip üretemedi (bkz. hafıza notu). Kullanıcının en iyi bulduğu iki referans video
+    # (_fedtest2dk, 20260916-184500-fed-in-faiz) video_broll'u hiç kullanmamış -- statik
+    # SDXL + Ken Burns + zengin Remotion motion graphics ile yapılmış. KAPATILDI, kanıtlanmış
+    # güvenli yola (statik+Ken Burns) dönüldü; motion graphics'in (s05b) FramePack'in kaynak
+    # baskısı/zamanlama riski olmadan güvenilir çalışması hedefleniyor.
+    enabled: false
+    # wan-i2v: Wan2.1-14B (GGUF Q4) — en yüksek hareket/detay kalitesi, klip başına
+    #          LTX'ten kat kat yavaş. Kalite önceliği için varsayılan bu.
+    # ltx-i2v: hızlı alternatif (klip ~2dk); kalite Wan'ın altında.
+    # cogvideox-t2v: eski davranış, metinden bağımsız video üretir (yavaş, görselle tutarsız).
+    # OTONOM DÖNGÜ: wan-i2v 16GB'de çok yavaş (full videolar 90dk timeout'a takıldı) -> ltx-i2v
+    # (~2dk/klip) ile i2v yolu güvenilir doğrulanıyor. Yayın/hero kalite için tekrar wan-i2v yap.
+    # 16 Eyl: framepack seçeneği eklendi (bkz. s05_video_broll.py, enhancements.framepack).
+    # Sabit ~6GB VRAM (uzunluktan bağımsız) -> WAN/LTX'i çökerten "uzunluk arttıkça VRAM
+    # şişmesi" riskini taşımaz; bu makinede denenecek EN DÜŞÜK RİSKLİ gerçek-video seçeneği.
+    # Denemek için: engine: framepack + enabled: true yap (varsayılan davranış DEĞİŞMEDİ).
+    # 18 Ağu (gece): önce ltx-i2v'ye düzeltildi ama models/LTX-Video BU MAKİNEDE HİÇ İNDİRİLMEMİŞ
+    # (OSError, indirilmesi gerekir: scripts/download_ltx.py) -> geri wan-i2v'ye dönüldü (tek
+    # gerçekten kurulu i2v motoru: models/Wan2.1-I2V-14B-480P). wan-i2v'nin bilinen yavaşlığını
+    # (metin kodlayıcı ~19dk tek seferlik + klip başına kat kat yavaş) tolere edilebilir kılmak
+    # için max_clips 99'dan 4'e düşürüldü (bkz. aşağıdaki max_clips notu) -> bu gece için sınırlı
+    # ama GARANTİ tamamlanan bir render; kalan segmentler foto-gerçekçi statik+Ken Burns kalır.
+    engine: framepack
+
+    # ---- wan-i2v ayarları (scripts/download_wan.py ile indirilir) ----
+    wan_model_name: models/Wan2.1-I2V-14B-480P
+    # Q4_K_M: 16GB VRAM'e transformer + CLIP + VAE birlikte sığması için seçildi.
+    # Kalite yetmezse Q5_K_S dene (indirme scriptindeki dosya adını değiştir).
+    wan_gguf_file: models/Wan2.1-I2V-14B-480P/gguf/wan2.1-i2v-14b-480p-Q4_K_M.gguf
+    # YATAY (16:9). 480P modeli; s07 zaten 1920x1080'e ölçekler.
+    wan_resolution: [832, 480]
+    # 25 kare ≈ 1.6s @ 16fps (4k+1). 16GB'de LoRA'sız GGUF Q4 ile spill etmeden çalışan
+    # ölçülmüş güvenli değer (guidance=5'te 14.2GB, ~29s/step). Segment ~5s ise s07 loop'lar.
+    wan_num_frames: 25
+    wan_fps: 16
+    # ---- lightx2v step+CFG distill LoRA (scripts/download_wan_lora.py) ----
+    # NOT: LoRA'yı GGUF Q4 tabana adapter olarak eklemek PEFT'i tabanı bf16'ya çözmeye
+    # zorluyor -> 16GB'de spill/kilit (denendi, çalışmadı). Pre-merged distill GGUF de
+    # (I2V 14B 480P) HF'de yok. Bu yüzden şimdilik LoRA KAPALI (boş) — LoRA'sız GGUF ile
+    # 20-40 step arası çalışıyoruz. Non-quantize taban gerektiği için asıl çözüm Wan 1.3B.
+    wan_lora_file: ""
+    wan_num_inference_steps: 14   # otonom döngü: 20 full'ü 90dk timeout'a sığdırmıyordu -> 14 (hız). Hero/yayın için 20-40
+    wan_guidance_scale: 5.0       # LoRA yokken CFG açık (distill LoRA olsaydı 1.0)
+    # UniPC flow_shift: 480p için 3.0 (model kartı önerisi)
+    wan_flow_shift: 3.0
+    # Lokal yol: hub cache'in Windows symlink gereksinimi (WinError 1314) nedeniyle
+    # model scripts/download_ltx.py ile models/ altına indiriliyor.
+    model_name: models/LTX-Video
+    # En uzun süren N segment video b-roll alır, geri kalanı statik görsel kalır.
+    # ~100sn/klip (960x544, 40 adım). 99 = TÜM segmentler gerçek video klip olur
+    # (statik görsel + Ken Burns hiç kullanılmaz) — "gerçek video" istendiği için varsayılan bu.
+    # Uzun videolarda süreyi kısmak istersen 8-10'a düşür.
+    # 31 Tem: GECE-BOYU ÜRETKEN DENGE. LTX bu makinede ~6-11dk/klip -> tüm segment (99)
+    # = ~3.7 saat/video (gecede ~2). Foto-gerçekçi RealVis zaten HER karede (statik dahil)
+    # olduğu için "sulu boya" sorunu çözülü; en önemli 12 segment gerçek hareketli klip alır,
+    # kalanı foto-gerçekçi statik + Ken Burns. ~1.5 saat/video -> gecede ~5 video.
+    # Tek "hero" video için 99 yap (tüm segment klip, ~3-4 saat).
+    # 18 Ağu (gece): bu değer WAN motoruyla kullanılıyor (LTX indirilmemiş, bkz. engine notu) —
+    # WAN, LTX'ten "kat kat yavaş" olarak belgelenmiş ve tek seferlik metin kodlayıcı yüklemesi
+    # bile ~19dk sürdü; 99 klip garanti tamamlanmayı riske atar. Bu gece için 4'e düşürüldü
+    # (tamamlanması garanti); gündüz LTX indirilip doğrulandığında 99'a geri dönülebilir.
+    max_clips: 4
+    # 16GB VRAM kalibrasyonu: 1216x704 @ 121 kare VRAM'i taşırıp Windows WDDM
+    # spill'i ile fiilen kilitlenmeye yol açtı (adım başına 30dk+). 960x544 @ 97
+    # kare aktivasyon belleğini ~yarıya indirir; s07 zaten 1080p'ye ölçekler.
+    i2v_resolution: [960, 544]
+    # 121 kare ≈ 5s @ 24fps (LTX; 8*k+1 olmalı) — segmentler ~5s olduğu için klip
+    # döngüye girmeden segmenti kaplar. 960x544'te VRAM güvenli (~12.5GB tepe);
+    # 97'ye düşürmek ~%20 hızlandırır ama uzun segmentlerde görünür döngü atlaması olur.
+    num_frames: 121
+    fps: 24
+    num_inference_steps: 30   # 5 Ağu: dengeli-hero testi için 25->30 (12 klip; ~7-8dk/klip). Fast için 25, tam hero için 40.
+
+    # cogvideox-t2v seçilirse: model_name: THUDM/CogVideoX-2b, num_frames: 49, fps: 8, steps: 50
+
+  motion_graphics:
+    # 16 Eyl eklendi. Remotion (React + Chromium render) ile ANİMASYONLU motion graphics —
+    # üç şablon (remotion/src/*.tsx, bkz. pipeline/stages/s05b_motion_graphics.py):
+    #   - MarketChart   : s04_visuals._inject_market_charts'ın CANLI matplotlib PNG ile
+    #                     işaretlediği (is_chart=True) segmentler için; çizgi kendini çizer,
+    #                     fiyat son değere sayar. Fiyat/etiket metnini HİÇ bozmaz.
+    #   - StatCallout/CompareBars : geri kalan segmentlerde yerel LLM (qwen3, bkz.
+    #                     pipeline/motion_graphics_director.py) "%70 faiz artış ihtimali" gibi
+    #                     tek istatistik ya da "Ağustos 162 bin, Temmuz 21 bin" gibi aynı
+    #                     cümledeki karşılaştırmayı bulup animasyonlu karta çevirir.
+    #   - TitleCard     : açılış segmenti için sinematik başlık kartı (title_card_intro: true).
+    # GPU/diffusion GEREKTİRMEZ (Chromium ile render) -> WAN/LTX/FramePack VRAM sınırlarından
+    # bağımsızdır ve edit.burn_subtitles'taki ffmpeg drawtext/libass çökme sorununu hiç görmez.
+    # 16 Eyl (akşam): AÇILDI (varsayılan davranış artık bu). Kullanıcı isteği: "shorts'larda
+    # daha fazla animasyon dikkat çeker" -- gerçek 4 segmentlik uçtan uca prodüksiyon koşusunda
+    # (TTS+SDXL+motion graphics+geçiş+Shorts) doğrulandı, hiçbir hata/senkron sorunu yok.
+    # make_shorts.py zaten SAYISAL/veri içeren segmentleri önceliklendiriyor (pick_window regex:
+    # \d|%|\$|₺|dolar|yüzde) -> StatCallout/CompareBars/MarketChart tam da Shorts'un seçtiği
+    # pencerelere denk geliyor, ekstra bir bağlama gerekmedi. Node.js/npm kurulu değilse veya
+    # Ollama kapalıysa otomatik ve sessizce atlanır (statik görsele düşülür) -- her koşulda güvenli.
+    enabled: true
+    fps: 30
+    max_render_minutes: 5
+    # StatCallout/CompareBars için yerel LLM'in seçebileceği en fazla segment sayısı (0 = kapalı).
+    # Ollama kapalıysa/timeout olursa sessizce atlanır (statik görsel korunur). "Daha fazla
+    # animasyon/grafik izleyiciyi tutar" isteği için yükseltildi. Gerçek videolarda (script
+    # ~70 segment / 7-8dk) 4 vurgu ~2dk'da bir animasyon demek -- göze batmadan yoğunluk artırır;
+    # kısa test job'larında (4-5 segment) zaten segmentlerin çoğu vurgulanmış olur.
+    max_stat_callouts: 12
+    # true ise segment 0 (script.json'daki 'topic' başlığıyla) sinematik TitleCard olur --
+    # videonun ilk saniyesi zaten en kritik "hook" anı, animasyonlu açılış izleyiciyi tutar.
+    title_card_intro: true
+    # 17 Eyl: gerçek prodüksiyon testinde Remotion'ın Chromium dev-server'ı TTS/SDXL'den
+    # hemen sonraki kaynak yarışması yüzünden bir kez "no response" verip statik görsele
+    # düşmüştü (kod/config hatası değil, geçici zamanlama sorunu). İki karşı önlem:
+    render_timeout_ms: 60000   # Remotion kendi varsayılanı (delayRender) zaten 30000ms -- gerçek tolerans için 60sn'e çıkarıldı
+    render_retry: true         # ilk deneme başarısız olursa 4sn bekleyip TEK SEFER tekrar dener
+
+    # 17 Eyl eklendi: "sadece sayı/alıntı içeren segmentler animasyonlu, gerisi düz
+    # Ken-Burns" şikayetine karşı -- 3 personayla (Maksimalist Broadcast/Sinematik
+    # Minimalist/Hız-Öncelikli Pragmatist) paralel prototip denemesinin harmanı
+    # (remotion/src/AccentOverlay.tsx). BİR KEZ (3 varyant) render edilip s07_edit.py'de
+    # ffmpeg -stream_loop ile her düz Ken-Burns segmentine bindirilir -- render maliyeti
+    # segment sayısından bağımsız, sabit kalır (12 segmentlik testte 3×~40s ≈ 2dk ek).
+    accent_overlay:
+      enabled: true
+      seconds: 8   # varyant klip süresi (kusursuz döngülenebilir, herhangi bir segment süresine uzatılır)
+
+edit:
+  # visuals aşaması çalışmadıysa (görsel üretilmediyse) assets/images altındaki
+  # sabit görseller ya da düz renk arka plana geri düşülür.
+  background_images_dir: assets/images
+  # YATAY 16:9 tam HD çıktı çözünürlüğü (dikey Shorts döneminden eski değer: 1080x1920)
+  resolution: [1920, 1080]
+  fps: 30
+  # 8 Ağu: KULLANICI İSTEĞİ — altyazı kaldırıldı, video sadece görsel + Türkçe seslendirme.
+  burn_subtitles: false
+  # 18 Ağu (gece): bu makinede ffmpeg'in drawtext filtresi (fontconfig/libass) ACCESS_VIOLATION
+  # (kod 3221225477 / 0xC0000005) ile çöküyor — hem winget hem vendor/ffmpeg-shared build'inde,
+  # repo-içi minimal fonts.conf (assets/fontconfig/fonts.conf) + yazılabilir cachedir denendi,
+  # değişmedi (Application olay günlüğü: avfilter-11.dll içinde çöküyor). Kök neden gündüz
+  # incelenmeli (ffmpeg build'i onarma/yeniden kurma gerekebilir). Yasal uyarı zaten YouTube
+  # açıklamasında var (policy.build_full_description) -> ekran-üstü kutular olmadan da uyumlu;
+  # video tamamlanabilsin diye geçici KAPATILDI.
+  # 16 Eyl eklendi: Remotion ile ANİMASYONLU altyazı (TikTok/CapCut tarzı pop-in) -- yukarıdaki
+  # burn_subtitles (libass) çökmesinin ALTERNATİFİ, Chromium ile render edilir, fontconfig/
+  # libass hiç kullanmaz. Bu makinede uçtan uca DOĞRULANDI (bkz. remotion/src/Captions.tsx):
+  # alpha kanalı gerçek WebM şeffaflığıyla test edildi (PIL ile RGBA piksel kontrolü + gerçek
+  # video overlay'i). KAPALI VARSAYILAN: bir sonraki tam prodüksiyon testinde doğrulanana kadar.
+  animated_captions:
+    enabled: true
+    fps: 30
+    # 16 Eyl: gerçek 444s/313-blok videoda 13338 kare PNG+alpha render'ı ~10-11dk sürdü
+    # (10dk varsayılanla SINIRDA zaman aşımına uğradı, kare kare tamamlanmıştı). Tam
+    # uzunlukta videolar için güvenli pay.
+    max_render_minutes: 25
+  # 18 Eyl eklendi (SIFIR_MALIYET rehberi Modül 6): video boyunca üstte akan ince,
+  # yarı-şeffaf bölüm çubuğu (Remotion ChapterProgress.tsx, s07_edit._render_chapter_progress).
+  # animated_captions gibi Chromium/libvpx-alpha ile render edilir; herhangi bir adım
+  # başarısız olursa (npx yok, node_modules yok, segments_timing.json yok, <2 segment)
+  # sessizce atlanır, video hiçbir zaman bozulmaz.
+  chapter_bar:
+    # 18 Eyl: kullanıcı isteğiyle kapatıldı.
+    enabled: false
+    fps: 30
+    max_render_minutes: 10
+  # Politika & Yasal Uyarı overlay'i (videonun başında şık bilgilendirme notu)
+  overlay_disclaimer: false
+  # Kaynak gösterimi (ilk 15 saniyede ekranın üst köşesinde kullanılan kaynaklar)
+  overlay_sources: false
+  # 1 Ağu: profesyonel stüdyo görünümü — hafif renk grade + vinyet + ince keskinlik
+  # (pipeline/utils/studio.py). Altyazıdan önce uygulanır. Kapatmak için false yap.
+  studio_look: true
+  # 18 Eyl eklendi (SFX Director, SIFIR_MALIYET rehberi Modül 1): motion-graphics/para/
+  # dramatik-düşüş anlarına otomatik mikro ses efekti (assets/sfx/, bkz. pipeline/sfx_director.py).
+  # Herhangi bir adım başarısız olursa sessizce atlanır, video hiçbir zaman bozulmaz.
+  sfx:
+    enabled: true
+  # Statik görsellere yavaş zoom/pan (Ken Burns) hareketi — slayt gösterisi hissini kırar
+  motion: true
+  motion_zoom_max: 1.15   # maksimum zoom oranı; 1.08-1.15 arası doğal durur (30 Tem: i2v almayan statik segmentler daha canlı dursun diye üst uca çekildi)
+  # 18 Eyl eklendi (SIFIR_MALIYET rehberi Modül 5): düz Ken Burns yerine derinlik-tahminli
+  # 2.5D parallax (ön/arka plan farklı hızda hareket eder, bkz. pipeline/utils/cinematic_motion.py).
+  # video_broll'un (WAN/FramePack) aksine GPU/RAM'e hafif bir 42M parametrelik derinlik
+  # modeli (Intel/dpt-swinv2-tiny-256) kullanır, timm/opencv gibi yeni bağımlılık gerektirmez.
+  # Segment başına ~9-17sn (5sn'lik klip, ısınmış model) -- gerçek video motorlarından
+  # (WAN/FramePack, dakikalar) çok daha hızlı ve bu makinede güvenilir çalıştığı doğrulandı.
+  # Herhangi bir hata olursa (model yüklenemedi vb.) o segment sessizce Ken Burns'e düşer.
+  parallax:
+    # 18 Eyl: gerçek uçtan uca test edildi (8 segment, geçerli klipler, video sorunsuz
+    # derlendi) -> AÇILDI.
+    enabled: true
+  # 16 Eyl eklendi: segmentler arası SERT KESME yerine gerçek editör geçişi (ffmpeg xfade).
+  # Her segmentin render süresi geçiş süresinin yarısı kadar uzatılır (Ken Burns biraz daha
+  # sürer / video b-roll biraz daha loop'lanır) -> zincirlenmiş xfade'in yuttuğu süre tam
+  # telafi edilir, TOPLAM video süresi audio.wav ile birebir aynı kalır (senkron bozulmaz).
+  # Pür CPU ffmpeg filtresi (xfade), bu makinede doğrulandı (ffmpeg -filters | grep xfade).
+  # type tek bir isim ya da liste olabilir (liste verilirse segmentler arasında sırayla
+  # döner) -- olası değerler: fade, fadeblack, fadewhite, smoothleft, smoothright, wipeleft,
+  # wiperight, circleopen, circleclose, dissolve... (bkz. ffmpeg xfade dokümantasyonu).
+  transitions:
+    enabled: true
+    # 17 Eyl: tek tip "fade" 12+ segmentlik videoda monoton/döngü hissi veriyordu
+    # (kullanıcı geri bildirimi). Kod zaten listeyi sırayla döndürüyordu
+    # (s07_edit._build_transition_chain: types[(i-1) % len(types)]), sadece config
+    # tek elemanlıydı -- liste yapmak sıfır kod değişikliğiyle çeşitlilik katıyor.
+    # Tümü ffmpeg xfade'in güvenli/yaygın geçişleri (nadir/agresif olanlardan kaçınıldı).
+    type: [fade, wipeleft, slideup, fadeblack, wiperight, slidedown]
+    duration: 0.5   # saniye; çok kısa segmentlerde otomatik güvenli üst sınıra kırpılır
+  # KARAKTER HEP ORTADA: true ise karakter TÜM video boyunca ekranda ortada (yatayda
+  # ortalı, alta yaslı) kalır ve köşeye küçülmez — arkasında foto-gerçekçi görsel/b-roll
+  # background olarak görünür. Gerçek bir sunucu (haber spikeri) düzeni. Bu true iken
+  # avatar_intro_seconds yok sayılır. (31 Tem akşam: kullanıcı isteği — karakter ortada + background.)
+  avatar_center_full: true
+  # KARAKTER ÖNCE: video karakter tam ekran konuşarak açılır (hook/intro), sonra
+  # köşe overlay'e küçülür. 0 verilirse intro kapanır, avatar hep köşede kalır.
+  # (avatar_center_full: true iken bu ayar YOK SAYILIR.)
+  avatar_intro_seconds: 6
+  # intro'da karakterin ekran yüksekliğini ne kadar kaplayacağı (0-1)
+  avatar_intro_height_ratio: 0.92
+  # intro sonrası köşe avatarının genişliği (ekran genişliğine oranla)
+  avatar_width_ratio: 0.42
+  # köşe avatarının konumu: bottom-right | bottom-left | top-right | top-left
+  # (web "Karakter" panelinden değiştirilir, edit_settings.json'a yazılır)
+  avatar_position: bottom-right
+  # avatar arka planını şeffaflaştırır (chroma key)
+  avatar_chroma_key: true
+  # Foto YEŞİL ekrana taşındı (rembg ile beyaz arka plan kaldırılıp yeşile konuldu):
+  # yeşil tenden/beyaz gömlekten çok farklı olduğu için temizce silinir, gömlek korunur.
+  # Beyaz zeminli fotoya dönersen: color=white, similarity=0.05, blend=0.03 yap.
+  avatar_chroma_color: "0x00FF00"
+  # 1 Ağu: karakter çevresinde YEŞİL HALE/kenar kalıyordu (kusursuz stüdyo için kabul edilemez).
+  # similarity yükseldi (daha fazla yeşilimsi kenar pikseli silinir) + blend genişledi
+  # (kenar geçişi yumuşayıp yeşil fringe saydama karışır). despill s07'de ayrıca uygulanır.
+  avatar_chroma_similarity: 0.30
+  avatar_chroma_blend: 0.22
+
+  # Altyazı stili — web arayüzündeki "Altyazı Tasarımı" panelinden düzenlenir ve
+  # subtitle_style.json'a yazılır (burası varsayılan/başlangıç değeri). font_size
+  # libass PlayResY=384 ölçeğindedir, piksel değil (video yüksekliğine oranla ölçeklenir).
+  subtitle_style:
+    # 31 Tem (akşam): kullanıcı isteği -> altyazı KÜÇÜLTÜLDÜ. Artık toplu 2 cümle yerine
+    # 3-4 kelimelik kısa bloklar akıyor (bkz. subtitles.words_per_cue), o yüzden font küçük
+    # olabilir. Kutu okunaklılık için opak kalır. (eski font 38; büyük 2 cümlelik bloklar içindi.)
+    font_name: "Segoe UI"
+    font_size: 26                # (eski 38) küçük altyazı — kısa 3-4 kelimelik bloklar için
+    bold: true
+    primary_colour: "#FFFFFF"    # yazı rengi
+    outline_colour: "#000000"    # kenarlık/kutu rengi
+    outline_opacity: 0.85        # okunaklı ama daha hafif arka kutu
+    border_style: 3              # 1=kenarlık+gölge, 3=opak arka kutu
+    outline: 2                   # (eski 3) küçük fonta uygun ince kutu dolgusu
+    shadow: 0
+    alignment: 2                 # 8=üst-orta, 5=orta, 2=alt-orta
+    margin_v: 60                 # dikey kenar boşluğu (küçük font -> biraz daha alta)
+
+youtube:
+  # İNSAN ONAY KAPISI: private kalmalı — YouTube'un "inauthentic content" (Tem 2025)
+  # politikasına uyumun temel taşı: her video yayınlanmadan önce insan gözünden geçer,
+  # tamamen otomatik "yükle ve yayınla" akışı YOK.
+  privacy_status: private   # private | unlisted — insan onayına kadar herkese acik degil
+  category_id: "27"          # Egitim; ihtiyaca gore degistir
+  default_language: tr
+  # "Made with AI" beyanı (Data API status.containsSyntheticMedia). Anlatım sesi
+  # gerçek bir kişinin AI klonu olduğu için şeffaflık gereği açık tutuluyor.
+  contains_synthetic_media: true
+  # 24 Eyl: günlük YouTube yükleme sınırı (0 = sınırsız). Zamanlanmış Shorts + otomatik döngü
+  # aynı gün seri yükleme yapıp "inauthentic content" (seri üretim) sinyali vermesin diye.
+  # Sınır dolunca s09 yüklemeyi hata vermeden atlar, video output klasöründe kalır.
+  max_uploads_per_day: 2
+  # 30 Eyl: seri oynatma listesi (sadakat/oturum süresi). Yoksa ilk yüklemede herkese açık oluşturulur.
+  playlist_title: "Finans Kanalı · Günlük Piyasa Analizi"
+  playlist_description: "Altın, dolar, borsa, petrol ve kripto — her gün güncel verilerle piyasa değerlendirmesi. Yatırım tavsiyesi değildir."
+  shorts_playlist_title: "Finans Kanalı · 30 Saniyede Piyasa"   # 9 Eki: Shorts ayrı rafta
+  shorts_playlist_description: "Günün en önemli rakamı 30 saniyede. Tam analizler kanalda. Yatırım tavsiyesi değildir."
+  # true: privacy_status public/unlisted yazılsa bile video private yüklenir (yayın yalnızca
+  # web panel 'Onay Bekleyenler' -> publish() ile). privacy_status zaten private olduğu için
+  # varsayılan false mevcut davranışı değiştirmez; privacy_status'u açarsan emniyet kilidi.
+  require_manual_approval: false
+  # 2 Eki (kullanıcı kararı): günlük video OTOMATİK yayınlanır. Video private + publishAt ile yüklenir, YouTube saatinde
+  # kendisi açar; yükleme (~13:00) ile yayın (15:00) arasında Studio'dan zamanlama kaldırılarak durdurulabilir.
+  # enabled: false -> eski davranış (private, elle yayın).
+  auto_publish:
+    enabled: true
+    long: "18:00"            # 25 Eki kullanıcı kararı: Shorts 15:00 -> uzun 18:00 -> Shorts 21:00
+    shorts: true
+    reels: ["15:00", "21:00"]   # 25 Eki: reel_1 15:00, reel_2 21:00 (uzun video 18:00)
+
+# 17 Eyl eklendi: bitmiş videoyu Google Drive'da tarihli bir klasöre yükler (pipeline/stages/
+# s10_drive_upload.py). YouTube ile AYNI OAuth client'ı (secrets/youtube_client_secret.json)
+# paylaşır ama AYRI token dosyası kullanır (secrets/drive_token.json). OAuth kurulumu ve ilk
+# test yüklemesi bu oturumda doğrulandı (bkz. drive_token.json). KULLANICI İSTEĞİ: 5TB Drive
+# alanı var, TAM OTOMATİK açık -- enabled: true iken orchestrator HER işten sonra (web'den
+# başlatılan hızlı-üretim dahil) hiçbir bayrağa gerek kalmadan kendiliğinden Drive'a yükler.
+drive:
+  enabled: true
+  parent_folder_id: ""   # boşsa My Drive köküne oluşturulur; sabit bir üst klasör istersen ID'sini buraya yaz
+
+# 17 Eyl eklendi: Editor / Denetleyici (Reviewer) / Tester üçlü ajan döngüsü (bkz.
+# pipeline/agents/). Denetleyici render'dan ÖNCE yerel LLM (Ollama) ile kalite kritiği
+# yapar (motion-skills/video-skills-toolkit tarzı "tekrar etme, gerçek veriye dayan"
+# kuralları); Tester render'dan SONRA ffprobe/ffmpeg ile teknik doğrulama yapar (süre,
+# video akışı, siyah kare) ve raporu Drive'a yükler (KULLANICI İSTEĞİ: hiçbir test
+# çıktısı kaybolmasın). Şimdilik s05b_motion_graphics.py (segment klipleri) ve
+# s07_edit.py (final video) aşamalarına bağlı. İkisi de savunmacı: Ollama/ffmpeg
+# yoksa veya hata verirse üretimi ASLA durdurmaz, sadece o denetim adımı atlanır.
+agents:
+  # 17 Eyl: Editor/Denetleyici/Tester 3'lü ajan sistemi eklendi ama HİÇ uçtan uca
+  # doğrulanmadı. 17 Eyl (test): gerçek bir job'da her motion-graphics segmenti için
+  # Ollama'ya soruyor (Ollama kapalıyken 90-150sn timeout sonrası sessizce onaylıyor,
+  # yani üretimi bloklamıyor ama her segmentte gereksiz gecikme ekliyor) + her test
+  # raporunu/render'ı otomatik Drive'a yüklüyor. Kanal henüz istikrarlı üretimde
+  # değilken bu ekstra süre/karmaşıklık haklı çıkmıyor -> kanal düzenli üretime
+  # geçip bu sistem ayrıca doğrulanana kadar KAPATILDI.
+  reviewer:
+    enabled: false
+  tester:
+    enabled: false
+    upload_to_drive: true   # her test raporu + varsa test render Drive'daki Tests/<job_id>'e yüklenir
+  max_revisions: 2           # Denetleyici/Tester reddederse Editor'a en fazla bu kadar geri dönülür
+
+shorts:
+  # Her uzun yatay (16:9) video üretildiğinde otomatik 1 adet dikey (9:16) Shorts klibi üretir
+  auto_generate: true
+  # Shorts klibi süresi (saniye)
+  target_duration: 45
+
+# ============================================================================
+# OPSİYONEL ARAÇLAR (2 Ağu eklendi) — kurulum scriptleri hazır, ilk manuel render
+# doğrulanana kadar orchestrator'a BAĞLANMADI (çalışan hattı bozmamak için). Her biri
+# scripts/ altından bağımsız çalıştırılır; doğrulanınca pipeline'a bağlanır.
+# ============================================================================
+enhancements:
+  # FramePack (lllyasviel) — uzun i2v, SABİT ~6GB VRAM (uzunluktan bağımsız). LTX/Wan'ın
+  # uzunluk/hız sınırını çözer. Kurulum: scripts/setup_framepack.ps1. Çalıştırma:
+  #   python scripts/run_framepack.py --image <png> --prompt "<hareket>" --seconds 5 --out <mp4>
+  framepack:
+    enabled: true
+    venv_python: vendor/FramePack/.venv/Scripts/python.exe
+    repo_dir: vendor/FramePack
+    seconds: 5
+    steps: 25
+    fps: 30
+    # 16 Eyl: visuals.video_broll.engine: framepack seçilirse s05_video_broll.py bu bloğu
+    # okur (seconds burada YOK SAYILIR, segment süresi kullanılır). max_render_minutes/
+    # min_free_*_gb, EchoMimic'te kilitlenmeye yol açan olaydan (bkz. echomimic_max_chunk_frames
+    # notu) sonra eklenen aynı proc_guard izleyicisini kullanır.
+    max_render_minutes: 30
+    min_free_ram_gb: 2.5
+    min_free_vram_gb: 1.0
+
+  # MMAudio (Sony AI) — videoya uygun arka plan müziği/ambiyans üretir (~6GB VRAM).
+  # Kurulum: scripts/setup_mmaudio.ps1. Çalıştırma (video.mp4 üretildikten SONRA):
+  #   python scripts/run_mmaudio.py --video output/<job>/video.mp4 --prompt "calm ambient" --out <mp4>
+  mmaudio:
+    enabled: true
+    venv_python: vendor/MMAudio/.venv/Scripts/python.exe
+    repo_dir: vendor/MMAudio
+    prompt: "calm subtle ambient background music, professional, unobtrusive"
+    duration: 8
+    music_volume_db: -22   # ambiyans bed'i anlatım sesinin ALTINDA kalsın (negatif = kısık)
+
+  # Real-ESRGAN + CodeFormer — final video/yüz upscale (960x544 render -> keskin 1080p).
+  # Kurulum: scripts/setup_upscale.ps1. Çalıştırma:
+  #   python scripts/run_upscale.py --in output/<job>/video.mp4 --out <mp4> --scale 2
+  # 17 Eyl: KAPALI'ya alındı -- iki ayrı sorun tespit edildi (gerçek job log'unda doğrulandı):
+  #   1. vendor/Real-ESRGAN/.venv hiç kurulmamış (setup_upscale.ps1 hiç çalıştırılmamış) ->
+  #      orchestrator her işte bunu deneyip anında (kod 1) başarısız oluyordu (zararsız ama
+  #      gereksiz -- video etkilenmiyordu, sadece boşa deneme+log gürültüsü).
+  #   2. Daha köklü sorun: bu adım orchestrator'da s07_edit SONRASI (final 1920x1080 video
+  #      üzerinde) çalışıyor -- yorumdaki "960x544 -> 1080p" senaryosu (düşük çözünürlüklü
+  #      video_broll'u keskinleştirme) artık geçerli değil, zaten 1080p olan videoyu 2x'e
+  #      (3840x2160/4K) büyütmek anlamsız/gereksiz olurdu. venv kurulsa bile şu haliyle
+  #      YANLIŞ yerde çalışıyor -- doğru çözüm ileride video_broll aşamasına taşımak
+  #      (düşük-çözünürlüklü i2v klipleri s07'den ÖNCE keskinleştirmek).
+  upscale:
+    enabled: false
+    venv_python: vendor/Real-ESRGAN/.venv/Scripts/python.exe
+    repo_dir: vendor/Real-ESRGAN
+    model: RealESRGAN_x2plus
+    face_enhance: true     # CodeFormer/GFPGAN ile yüz restorasyonu
+
+paths:
+  output_dir: output
+  topics_file: topics.json
+
+# 29 Eyl: DİJİTAL İKİZ (pipeline/twin.py). Kanal sahibinin 1-2 dk'lık gerçek taban çekimi ileri-geri döngülenir,
+# LatentSync 1.5 (vendor/LatentSync, scripts/setup_latentsync.ps1) yalnız ağzı yeni sese göre üretir.
+# Günlük hatta: tools/daily_run.py --twin  |  tek başına: scripts/run_latentsync.py
+twin:
+  base_video: assets/twin/base.mp4
+  chunk_seconds: 10        # ses parça uzunluğu (her parça ayrı süreç -> RAM birikmez)
+  steps: 20                # 20-50: kalite / hız
+  guidance: 1.5            # 1.0-3.0: yüksek = daha sıkı dudak senkronu ama titreme riski
+  max_chunk_minutes: 15
+  min_free_ram_gb: 2.0     # altına inerse parça güvenli durdurulur (18 Ağu çökmesi dersi)
+  min_free_vram_gb: 0.8
+# 27 Eyl: GÜNLÜK OTOMASYON (tools/daily_run.py, Görev Zamanlayıcı 14:00). Claude Code headless
+# (`claude -p`) araştırır + yazar (prompts/daily_video.md); pipeline/daily/* seslendirir, Remotion
+# (remotion/src/auto) render eder, uzun videoyu PRIVATE yükler (kullanıcı 16:00'da elle yayınlar),
+# 2 dikey Reels'i Drive'a koyar (telefondan elle yüklenir — API ile Shorts yüklemesi YOK).
+daily:
+  enabled: true
+  time: "14:00"
+  reels_count: 2            # 10 Eki: 3->2 (Shorts 0 abone getiriyor, günde 4 yükleme abone akışını yoruyordu)
+  long_days: [0, 2, 4]      # 9 Eki: uzun video Pzt/Çar/Cum (0=Pzt); diğer günler yalnız 3 Shorts
+  presenter: {enabled: true, pip: true, style: 3d} # 9 Eki: 2D çizim sunucu (remotion/src/auto/Presenter.tsx)
+  min_seconds: 480          # 8 dk altı video YÜKLENMEZ (mid-roll eşiği)
+  claude:
+    effort: high
+    max_fix_rounds: 2       # doğrulama hatası olursa Claude'a geri gönderme sayısı
+    timeout_min: 40
+    # Claude abonelik kotası dolarsa: sıfırlanma bu kadar dakika içindeyse bekle + aynı oturumu sürdür.
+    max_wait_min: 150
+    # true: kota doluysa .env ANTHROPIC_API_KEY ile ÜCRETLİ API'den devam (~$4/koşu). Kullanıcı onayı olmadan AÇMA.
+    api_fallback: false
+  voice:
+    # Ses tutarlılığı (27 Eyl A/B, tools/voice_consistency.py): cümle cümle üretim perde std 2,75 / maks 6,2
+    # yarıton idi. En büyük kazanç 2-3 cümlelik PARAGRAF segmentleri (20-45 kelime) + devam modu + sabit tohum:
+    # std 0,56 / maks 0,9 yarıton, tını cv %5,6 (cfg 2.0/10 adımla). Ses kapısı güvenlik ağı.
+    prompt_wav: assets/voice_reference/prompt_clean.wav
+    prompt_text: "Burada paylaştıklarım bilgilendirme amaçlı değerlendirmelerdir. Piyasalar risk içerir. Herkesin finansal durumu farklıdır, kararlarınızı kendi araştırmanızla verin. Şimdi gel, bu doların iki saatte verdiği mesajı gerçekten anlayalım."
+    seed: 1234
+    cfg: 2.0
+    steps: 10
+    gate_semitones: 1.5
+    gate_timbre: 0.22
+    gate_retries: 2
+  render:
+    concurrency: 4   # 3 Eki: 8 ile "Page crashed" (RAM)
+    crf: 17
+
+# Referans kanal izleyici (tools/ref_watch.py): yalnız konu/tez/yapı ilhamı, kopya/çeviri yasak.
+# Boş bırakılırsa izlenmez. Ör: "https://www.youtube.com/@KanalAdi/videos"
+ref_watch:
+  channel: ""

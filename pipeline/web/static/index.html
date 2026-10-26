@@ -1,0 +1,1236 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Finans Kanalı Studio — AI Video & Shorts Üretim Hattı</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #181b24;
+    --surface-elevated: #222634;
+    --surface-hover: #2a2f40;
+    --line: #2b3042;
+    --line-light: #3b425a;
+    --ink: #f0f2f8;
+    --ink-dim: #9aa1b8;
+    --ink-muted: #626982;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --accent-light: rgba(37, 99, 235, 0.15);
+    --gold: #d97706;
+    --gold-light: rgba(217, 119, 6, 0.15);
+    --ok: #16a34a;
+    --ok-light: rgba(22, 163, 74, 0.15);
+    --err: #dc2626;
+    --warn: #ea580c;
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+    --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .brand h1 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  .brand span.tag {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    background: var(--accent-light);
+    color: #60a5fa;
+    border-radius: 4px;
+    border: 1px solid rgba(96, 165, 250, 0.3);
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .model-select-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    padding: 4px 8px;
+    border-radius: 6px;
+  }
+  .model-select-group label {
+    font-size: 0.75rem;
+    color: var(--ink-dim);
+    font-family: var(--mono);
+  }
+  .model-select-group select {
+    background: transparent;
+    border: none;
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    outline: none;
+    cursor: pointer;
+  }
+
+  .status-pill {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    padding: 4px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .status-pill.running {
+    color: #fb923c;
+    border-color: #fb923c;
+    background: rgba(251, 146, 60, 0.1);
+  }
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--ok);
+  }
+  .status-dot.offline { background: var(--err); }
+  .status-dot.pulsing { animation: pulse 1.5s infinite; }
+
+  @keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.3; }
+    100% { opacity: 1; }
+  }
+
+  main {
+    display: grid;
+    grid-template-columns: 480px 1fr;
+    min-height: calc(100vh - 61px);
+  }
+  @media (max-width: 1080px) {
+    main { grid-template-columns: 1fr; }
+  }
+
+  .col-left {
+    border-right: 1px solid var(--line);
+    padding: 20px;
+    overflow-y: auto;
+    max-height: calc(100vh - 61px);
+  }
+  .col-right {
+    padding: 20px 24px;
+    overflow-y: auto;
+    max-height: calc(100vh - 61px);
+    background: #0d0f14;
+  }
+
+  /* Sekme Butonları */
+  .tab-nav {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+  }
+  .tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--ink-dim);
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .tab-btn:hover {
+    color: var(--ink);
+    background: var(--surface);
+  }
+  .tab-btn.active {
+    color: var(--ink);
+    background: var(--surface-elevated);
+    border-bottom: 2px solid var(--accent);
+  }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Kartlar ve Formlar */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .card-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ink-dim);
+    margin: 0 0 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  /* Hızlı Şablonlar */
+  .preset-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .preset-card {
+    background: var(--surface-elevated);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.15s;
+  }
+  .preset-card:hover {
+    border-color: var(--accent);
+    background: var(--surface-hover);
+    transform: translateY(-1px);
+  }
+  .preset-card .p-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    font-size: 0.82rem;
+    color: var(--ink);
+    margin-bottom: 4px;
+  }
+  .preset-card .p-desc {
+    font-size: 0.72rem;
+    color: var(--ink-muted);
+    line-height: 1.3;
+  }
+
+  input[type=text], textarea, select {
+    width: 100%;
+    font-family: var(--sans);
+    font-size: 0.88rem;
+    padding: 9px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--ink);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  input[type=text]:focus, textarea:focus, select:focus {
+    border-color: var(--accent);
+  }
+  textarea { resize: vertical; }
+
+  button.btn {
+    font-family: var(--sans);
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 9px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: #ffffff;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.15s;
+  }
+  button.btn:hover { background: var(--accent-hover); }
+  button.btn.secondary {
+    background: var(--surface-elevated);
+    color: var(--ink);
+    border-color: var(--line);
+  }
+  button.btn.secondary:hover {
+    background: var(--surface-hover);
+    border-color: var(--line-light);
+  }
+  button.btn.success {
+    background: var(--ok);
+    border-color: var(--ok);
+  }
+  button.btn.small {
+    padding: 5px 10px;
+    font-size: 0.78rem;
+  }
+  button.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .badge {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 3px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    border: 1px solid var(--line);
+    background: var(--surface-elevated);
+    color: var(--ink-dim);
+  }
+  .badge.done { color: #4ade80; border-color: rgba(74, 222, 128, 0.3); background: rgba(74, 222, 128, 0.1); }
+  .badge.processing { color: #fb923c; border-color: rgba(251, 146, 60, 0.3); background: rgba(251, 146, 60, 0.1); }
+  .badge.failed { color: #f87171; border-color: rgba(248, 113, 113, 0.3); background: rgba(248, 113, 113, 0.1); }
+  .badge.accent { color: #60a5fa; border-color: rgba(96, 165, 250, 0.3); background: rgba(96, 165, 250, 0.1); }
+
+  /* Pipeline İlerleme Adımları (Stepper) */
+  .stepper {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    overflow-x: auto;
+  }
+  .step-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--ink-muted);
+  }
+  .step-item.active { color: #fb923c; }
+  .step-item.done { color: #4ade80; }
+  .step-num {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.65rem;
+    font-family: var(--mono);
+  }
+  .step-item.active .step-num { border-color: #fb923c; background: rgba(251, 146, 60, 0.15); }
+  .step-item.done .step-num { border-color: #4ade80; background: rgba(74, 222, 128, 0.15); }
+  .step-arrow { color: var(--line-light); font-size: 0.8rem; }
+
+  /* İş Listesi */
+  .job-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .job-card:hover { border-color: var(--line-light); background: var(--surface-hover); }
+  .job-card.active { border-color: var(--accent); background: var(--surface-elevated); }
+  .job-card .title { font-size: 0.9rem; font-weight: 600; margin-bottom: 4px; }
+  .job-card .meta { display: flex; align-items: center; justify-content: space-between; font-size: 0.72rem; color: var(--ink-dim); font-family: var(--mono); }
+
+  /* Detay Görünümü */
+  .detail-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .media-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .media-tab-btn {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    border-radius: 6px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+    cursor: pointer;
+  }
+  .media-tab-btn.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  video {
+    width: 100%;
+    border-radius: 8px;
+    background: #000;
+    border: 1px solid var(--line);
+  }
+
+  pre.log {
+    background: #08090d;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    line-height: 1.5;
+    max-height: 380px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #cbd5e1;
+  }
+
+  .meta-box {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .meta-box .k {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .meta-box .v { font-size: 0.88rem; line-height: 1.45; }
+
+  .copy-btn {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--ink-dim);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 0.7rem;
+    cursor: pointer;
+  }
+  .copy-btn:hover { color: var(--ink); border-color: var(--line-light); }
+
+  /* Toast Notification */
+  #toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--surface-elevated);
+    border: 1px solid var(--accent);
+    color: var(--ink);
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(10px);
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 1000;
+  }
+  #toast.show {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>Finans Kanalı Studio</h1>
+    <span class="tag">Yerel AI Belgesel Motoru</span>
+  </div>
+
+  <div class="header-actions">
+    <div class="model-select-group" title="Ollama'da aktif kullanılan yerel model">
+      <div id="ollamaDot" class="status-dot"></div>
+      <label>Model:</label>
+      <select id="modelSelect">
+        <option value="qwen3:14b">qwen3:14b</option>
+      </select>
+    </div>
+
+    <span id="statusPill" class="status-pill">
+      <span class="status-dot"></span>
+      <span id="statusText">Sistem Boşta</span>
+    </span>
+  </div>
+</header>
+
+<main>
+  <!-- SOL PANEL: ÜRETİM VE KONTROL -->
+  <section class="col-left">
+    <div class="tab-nav">
+      <button class="tab-btn active" onclick="switchTab('tabStudio')">🎬 Hikaye Stüdyosu</button>
+      <button class="tab-btn" onclick="switchTab('tabTrends'); loadTrends();">🔥 Canlı Gündem & Trendler</button>
+      <button class="tab-btn" onclick="switchTab('tabPersona')">🧠 Kanal Beyni</button>
+      <button class="tab-btn" onclick="switchTab('tabSubs'); loadEffectsSettings();">🎨 Altyazı & Stil</button>
+      <button class="tab-btn" onclick="switchTab('tabChat')">💬 Araştırma Sohbeti</button>
+    </div>
+
+    <!-- TAB 1: HİKAYE STÜDYOSU -->
+    <div id="tabStudio" class="tab-content active">
+      <div class="card">
+        <div class="card-title">
+          <span>⚡ Hızlı Finans Şablonları</span>
+          <span style="font-size:0.7rem; font-weight:normal;">Tek tıkla doldur</span>
+        </div>
+        <div class="preset-grid" id="presetGrid"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span>📝 3. Kişi Belgesel & Haber Sentezi</span>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <div>
+            <label style="font-size:0.75rem; color:var(--ink-dim); display:block; margin-bottom:4px;">Video Konusu:</label>
+            <input type="text" id="studioTopic" placeholder="Örn: 17 Ağustos Pazartesi piyasa açılışı, borsa, altın ve döviz analizi">
+          </div>
+
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+            <div>
+              <label style="font-size:0.75rem; color:var(--ink-dim); display:block; margin-bottom:4px;">Hedef Süre / Kelime:</label>
+              <select id="studioWords">
+                <option value="150">Hızlı / Shorts (~1 dk • 150 kelime)</option>
+                <option value="288" selected>Standart Analiz (~2-3 dk • 288 kelime)</option>
+                <option value="800">Derinlemesine Belgesel (~6-8 dk • 800 kelime)</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:0.75rem; color:var(--ink-dim); display:block; margin-bottom:4px;">Anlatım Dili:</label>
+              <select id="studioLang">
+                <option value="tr" selected>Türkçe (Finans Kanalı)</option>
+                <option value="en">English (Curious Mind)</option>
+              </select>
+            </div>
+          </div>
+
+          <label style="display:flex; align-items:center; gap:8px; font-size:0.82rem; cursor:pointer; color:var(--ink-dim);">
+            <input type="checkbox" id="studioResearch" checked style="width:16px; height:16px;">
+            <span>🌐 Canlı Haberleri ve Piyasa Verilerini Çek (Google News + Yahoo + Wiki)</span>
+          </label>
+
+          <div style="display:flex; gap:8px; margin-top:4px;">
+            <button class="btn secondary" id="btnOutline" style="flex:1;">🔍 1. Taslak & Haberleri Çıkar</button>
+            <button class="btn secondary" id="btnGenerateScript" style="flex:1;">📝 2. Metni Üret</button>
+          </div>
+
+          <button class="btn success" id="btnStartFullPipeline" style="width:100%; margin-top:4px;">
+            🚀 3. Video & Shorts Üretimini Başlat
+          </button>
+        </div>
+
+        <!-- Canlı Taslak & Önizleme Alanı -->
+        <div id="studioPreviewBox" style="display:none; margin-top:14px; border-top:1px solid var(--line); padding-top:12px;"></div>
+      </div>
+    </div>
+
+    <!-- TAB 2: CANLI GÜNDEM & TRENDLER -->
+    <div id="tabTrends" class="tab-content">
+      <div class="card">
+        <div class="card-title">
+          <span>🔥 İnternetteki Canlı Ekonomi Gündemi</span>
+          <button class="btn small secondary" onclick="loadTrends()">🔄 Yenile</button>
+        </div>
+        <p style="font-size:0.78rem; color:var(--ink-muted); margin:0 0 12px;">
+          Sanal beyin Google News ve ekonomi portallarını canlı tarar; tek tıkla herhangi bir sıcak haberi belgesel videosuna dönüştürebilirsiniz.
+        </p>
+        <div id="trendsList" style="display:flex; flex-direction:column; gap:8px;"></div>
+      </div>
+    </div>
+
+    <!-- TAB 3: KANAL BEYNİ & PERSONA -->
+    <div id="tabPersona" class="tab-content">
+      <div class="card">
+        <div class="card-title"><span>🧠 Persona Yapılandırması</span></div>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <input type="text" id="p_name" placeholder="Kanal adı">
+          <input type="text" id="p_niche" placeholder="Niş">
+          <input type="text" id="p_audience" placeholder="Hedef Kitle">
+          <textarea id="p_tone" rows="2" placeholder="Ton"></textarea>
+          <textarea id="p_hook_style" rows="2" placeholder="Hook Tarzı"></textarea>
+          <textarea id="p_rules" rows="3" placeholder="Kurallar"></textarea>
+          <input type="text" id="p_signature" placeholder="İmza kapanış">
+          <button class="btn small" id="savePersonaBtn">Kişiliği Kaydet</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: ALTYAZI VE STİL -->
+    <div id="tabSubs" class="tab-content">
+      <div class="card">
+        <div class="card-title"><span>🎨 Altyazı Tasarımı</span></div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <label style="font-size:0.75rem;">Yazı Boyutu
+            <input type="range" id="s_font_size" min="12" max="48" step="1">
+          </label>
+          <label style="font-size:0.75rem;">Yazı Rengi
+            <input type="color" id="s_primary_colour" style="width:100%; height:28px; padding:0; border:none;">
+          </label>
+          <label style="font-size:0.75rem;">Kutu/Kenarlık Rengi
+            <input type="color" id="s_outline_colour" style="width:100%; height:28px; padding:0; border:none;">
+          </label>
+          <label style="font-size:0.75rem;">Kutu Opaklığı
+            <input type="range" id="s_outline_opacity" min="0" max="1" step="0.05">
+          </label>
+        </div>
+        <button class="btn small" id="saveStyleBtn" style="margin-top:10px;">Altyazı Stilini Kaydet</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span>✨ Video Efektleri (Yeni)</span></div>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+
+          <label style="display:flex; align-items:center; gap:8px; font-size:0.82rem; cursor:pointer;">
+            <input type="checkbox" id="fx_captions_enabled" style="width:16px; height:16px;">
+            <span>🎞️ Animasyonlu Altyazı (Remotion, TikTok/CapCut tarzı pop-in)</span>
+          </label>
+
+          <label style="display:flex; align-items:center; gap:8px; font-size:0.82rem; cursor:pointer;">
+            <input type="checkbox" id="fx_mg_enabled" style="width:16px; height:16px;">
+            <span>📊 Motion Graphics (canlı grafik / istatistik kartları / başlık kartı)</span>
+          </label>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-left:24px;">
+            <label style="font-size:0.75rem; color:var(--ink-dim);">Max İstatistik Kartı
+              <input type="number" id="fx_mg_max_stat" min="0" max="12" step="1">
+            </label>
+            <label style="display:flex; align-items:center; gap:6px; font-size:0.75rem; color:var(--ink-dim); margin-top:16px;">
+              <input type="checkbox" id="fx_mg_title_card" style="width:14px; height:14px;">
+              <span>Açılışta sinematik başlık kartı</span>
+            </label>
+          </div>
+
+          <label style="display:flex; align-items:center; gap:8px; font-size:0.82rem; cursor:pointer;">
+            <input type="checkbox" id="fx_trans_enabled" style="width:16px; height:16px;">
+            <span>🔀 Segmentler Arası Geçiş (xfade)</span>
+          </label>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-left:24px;">
+            <label style="font-size:0.75rem; color:var(--ink-dim);">Geçiş Türü
+              <select id="fx_trans_type">
+                <option value="fade">fade</option>
+                <option value="fadeblack">fadeblack</option>
+                <option value="fadewhite">fadewhite</option>
+                <option value="smoothleft">smoothleft</option>
+                <option value="smoothright">smoothright</option>
+                <option value="wipeleft">wipeleft</option>
+                <option value="wiperight">wiperight</option>
+                <option value="circleopen">circleopen</option>
+                <option value="circleclose">circleclose</option>
+                <option value="dissolve">dissolve</option>
+              </select>
+            </label>
+            <label style="font-size:0.75rem; color:var(--ink-dim);">Süre (sn)
+              <input type="number" id="fx_trans_duration" min="0.1" max="2" step="0.1">
+            </label>
+          </div>
+
+          <label style="display:flex; align-items:center; gap:8px; font-size:0.82rem; cursor:pointer;">
+            <input type="checkbox" id="fx_burn_subtitles" style="width:16px; height:16px;">
+            <span>📝 Sabit (libass) Altyazı — bu makinede ffmpeg drawtext çökme geçmişi var, kapalı önerilir</span>
+          </label>
+
+          <button class="btn small" id="saveEffectsBtn" style="margin-top:4px;">Efektleri Kaydet</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: ARAŞTIRMA SOHBETİ -->
+    <div id="tabChat" class="tab-content">
+      <div class="card">
+        <div class="card-title"><span>💬 Araştırma Sohbeti (ücretsiz, internete erişimli)</span></div>
+        <p style="font-size:0.78rem; color:var(--ink-muted); margin:0 0 12px;">
+          Bir soru veya video konusu yaz; yerel beyin canlı web/haber/piyasa kaynaklarını tarayıp
+          kaynaklı, çapraz-doğrulanmış bir yanıt üretir. Yanıtın altında TTS'e hazır Türkçe metni
+          "Kopyala" ile alabilirsin.
+        </p>
+        <div id="chatMessages" style="display:flex; flex-direction:column; gap:10px; max-height:420px; overflow-y:auto; margin-bottom:10px;"></div>
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="chatInput" placeholder="Örn: bugün altın fiyatını etkileyen gelişmeler neler?" style="flex:1;" onkeydown="if(event.key==='Enter') sendChatMessage();">
+          <button class="btn" id="btnChatSend" onclick="sendChatMessage()">Gönder</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SAĞ PANEL: İŞLER & ÇIKTI OYNATICI -->
+  <section class="col-right">
+    <!-- CANLI İLERLEME ÇUBUĞU (STEPPER) -->
+    <div class="stepper" id="pipelineStepper" style="display:none;">
+      <div class="step-item" id="st_script"><div class="step-num">1</div> Script</div>
+      <div class="step-arrow">›</div>
+      <div class="step-item" id="st_tts"><div class="step-num">2</div> Ses (TTS)</div>
+      <div class="step-arrow">›</div>
+      <div class="step-item" id="st_vis"><div class="step-num">3</div> Görseller</div>
+      <div class="step-arrow">›</div>
+      <div class="step-item" id="st_sub"><div class="step-num">4</div> Altyazı</div>
+      <div class="step-arrow">›</div>
+      <div class="step-item" id="st_edit"><div class="step-num">5</div> Montaj</div>
+      <div class="step-arrow">›</div>
+      <div class="step-item" id="st_short"><div class="step-num">6</div> Shorts</div>
+    </div>
+
+    <div style="display:grid; grid-template-columns: 320px 1fr; gap:20px;">
+      <!-- İŞ LİSTESİ -->
+      <div>
+        <div class="card-title"><span>📂 Üretilen Videolar</span></div>
+        <div id="jobList" class="job-list"></div>
+      </div>
+
+      <!-- DETAY GÖRÜNÜMÜ -->
+      <div id="jobDetail">
+        <p style="color:var(--ink-muted); font-size:0.88rem;">Sol taraftan bir iş seçin veya yeni bir video başlatın.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="toast">Bildirim</div>
+
+<script>
+let selectedJobId = null;
+let currentJobs = [];
+
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 3000);
+}
+
+function escapeHtml(s) {
+  return (s || "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(text || res.statusText);
+  }
+  const ct = res.headers.get("content-type") || "";
+  return ct.includes("application/json") ? res.json() : res.text();
+}
+
+function switchTab(tabId) {
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+  event.target.classList.add("active");
+  document.getElementById(tabId).classList.add("active");
+}
+
+// 1. Ollama Durumu & Model Listesi
+async function checkOllama() {
+  try {
+    const st = await api("/api/ollama/status");
+    const dot = document.getElementById("ollamaDot");
+    const sel = document.getElementById("modelSelect");
+    if (st.online) {
+      dot.className = "status-dot";
+      dot.title = "Ollama Çevrimiçi";
+      if (st.models && st.models.length) {
+        sel.innerHTML = st.models.map(m => 
+          `<option value="${m}" ${m === st.active_model ? 'selected' : ''}>${m}</option>`
+        ).join("");
+      }
+    } else {
+      dot.className = "status-dot offline";
+      dot.title = "Ollama Çevrimdışı";
+    }
+  } catch(e) {
+    document.getElementById("ollamaDot").className = "status-dot offline";
+  }
+}
+
+// 2. Hızlı Şablonlar
+async function loadPresets() {
+  try {
+    const presets = await api("/api/presets");
+    const grid = document.getElementById("presetGrid");
+    grid.innerHTML = presets.map(p => `
+      <div class="preset-card" onclick="usePreset('${escapeHtml(p.topic)}')">
+        <div class="p-head"><span>${p.icon}</span> <span>${escapeHtml(p.title)}</span></div>
+        <div class="p-desc">${escapeHtml(p.description)}</div>
+      </div>
+    `).join("");
+  } catch(e) {}
+}
+
+function usePreset(topic) {
+  document.getElementById("studioTopic").value = topic;
+  showToast("Şablon konuya aktarıldı ✓");
+}
+
+// 2.5 Canlı Gündem & Trendler
+async function loadTrends() {
+  const list = document.getElementById("trendsList");
+  list.innerHTML = '<p style="color:var(--ink-dim); font-size:0.85rem;">İnternetteki ekonomi haberleri taranıyor…</p>';
+  try {
+    const res = await api("/api/trends?language=" + document.getElementById("studioLang").value);
+    const trends = res.trends || [];
+    if (!trends.length) {
+      list.innerHTML = '<p style="color:var(--ink-muted); font-size:0.85rem;">Şu an canlı haber bulunamadı.</p>';
+      return;
+    }
+    list.innerHTML = trends.map(t => `
+      <div class="card" style="margin-bottom:6px; padding:10px 12px; background:var(--surface-elevated);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+          <div>
+            <div style="font-weight:600; font-size:0.85rem; color:var(--ink);">${escapeHtml(t.title)}</div>
+            <div style="font-size:0.72rem; color:var(--ink-dim); margin-top:2px;">
+              <span>📰 ${escapeHtml(t.source)}</span> • <span>${escapeHtml(t.date || '')}</span>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+          <button class="btn small secondary" style="white-space:nowrap;" onclick="useTrend('${escapeHtml(t.suggested_topic || t.title)}')">
+            👁️ İncele & Düzenle
+          </button>
+          <button class="btn small" style="white-space:nowrap;" onclick="quickStartTrend('${escapeHtml(t.suggested_topic || t.title)}', 150, this)">
+            ⚡ Hızlı Short Üret
+          </button>
+          <button class="btn small success" style="white-space:nowrap;" onclick="quickStartTrend('${escapeHtml(t.suggested_topic || t.title)}', 288, this)">
+            🚀 Hemen Video Üret
+          </button>
+        </div>
+      </div>
+    `).join("");
+  } catch(e) {
+    list.innerHTML = `<p style="color:var(--err); font-size:0.82rem;">Trendler yüklenemedi: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+function useTrend(topic) {
+  switchTab('tabStudio');
+  document.getElementById("studioTopic").value = topic;
+  showToast("Haber stüdyoya aktarıldı ✓");
+}
+
+// Trend kartından TEK TIKLA üretim -- taslak/metin önizlemesini atlar, doğrudan
+// /api/brain/create-job'ı çağırır (o zaten araştırma + script + iş oluşturmayı tek adımda yapar).
+async function quickStartTrend(topic, targetWords, btn) {
+  const original = btn.textContent;
+  btn.disabled = true; btn.textContent = "🚀 Başlatılıyor...";
+  try {
+    const lang = document.getElementById("studioLang").value;
+    const r = await api("/api/brain/create-job", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic, research: true, target_words: targetWords, language: lang })
+    });
+    showToast(`Üretim başlatıldı (${r.segments} segment) ✓`);
+    selectedJobId = r.job_id;
+    await refreshStatus();
+    await refreshJobs();
+  } catch (e) {
+    showToast("Başlatılamadı: " + e.message);
+  }
+  btn.disabled = false; btn.textContent = original;
+}
+
+// 3. Hikaye Stüdyosu Olayları
+document.getElementById("btnOutline").addEventListener("click", async () => {
+  const topic = document.getElementById("studioTopic").value.trim();
+  if (!topic) { showToast("Lütfen bir konu girin"); return; }
+  const btn = document.getElementById("btnOutline");
+  const box = document.getElementById("studioPreviewBox");
+  btn.disabled = true; btn.textContent = "🔍 Çıkarılıyor...";
+  box.style.display = "block";
+  box.innerHTML = '<p style="color:var(--ink-dim); font-size:0.85rem;">Haberler ve veriler toplanıyor, taslak örülüyor…</p>';
+
+  try {
+    const res = await api("/api/brain/outline", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic, language: document.getElementById("studioLang").value })
+    });
+    const o = res.outline || {};
+    box.innerHTML = `
+      <div class="meta-box" style="margin-bottom:8px;">
+        <div class="k">🎬 4 Aşamalı Olay Örgüsü (Outline)</div>
+        <div class="v" style="font-size:0.82rem;">
+          <p><strong>1. Açılış Sahnesi:</strong> ${escapeHtml(o.hook_scene || "")}</p>
+          <p><strong>2. Neden-Sonuç:</strong> ${escapeHtml(o.causes_and_chain || "")}</p>
+          <p><strong>3. Gerçek Hayat:</strong> ${escapeHtml(o.human_impact || "")}</p>
+          <p><strong>4. Büyük Resim:</strong> ${escapeHtml(o.big_picture || "")}</p>
+        </div>
+      </div>
+      <p style="font-size:0.75rem; color:var(--ink-muted);">🌐 ${res.sources ? res.sources.length : 0} doğrulanmış kaynak bulundu.</p>
+    `;
+    showToast("Taslak başarıyla oluşturuldu ✓");
+  } catch (e) {
+    box.innerHTML = `<p style="color:var(--err); font-size:0.82rem;">Hata: ${escapeHtml(e.message)}</p>`;
+  }
+  btn.disabled = false; btn.textContent = "🔍 1. Taslak & Haberleri Çıkar";
+});
+
+document.getElementById("btnGenerateScript").addEventListener("click", async () => {
+  const topic = document.getElementById("studioTopic").value.trim();
+  if (!topic) { showToast("Lütfen bir konu girin"); return; }
+  const btn = document.getElementById("btnGenerateScript");
+  const box = document.getElementById("studioPreviewBox");
+  btn.disabled = true; btn.textContent = "📝 Üretiliyor...";
+  box.style.display = "block";
+  box.innerHTML = '<p style="color:var(--ink-dim); font-size:0.85rem;">3. tekil şahıs belgesel metni ve görsel promptlar üretiliyor…</p>';
+
+  try {
+    const res = await api("/api/brain/generate-script", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        topic,
+        language: document.getElementById("studioLang").value,
+        target_words: parseInt(document.getElementById("studioWords").value)
+      })
+    });
+    const d = res.data || {};
+    const meta = d.metadata || {};
+    box.innerHTML = `
+      <div class="meta-box" style="margin-bottom:8px;">
+        <div class="k">
+          <span>📌 Başlık & Segmentler (${(d.segments || []).length} Cümle)</span>
+        </div>
+        <div class="v">
+          <p style="font-weight:600; color:#60a5fa;">${escapeHtml(meta.title || topic)}</p>
+          <p style="font-size:0.82rem; line-height:1.5;">${escapeHtml(d.script || (d.segments || []).join(" "))}</p>
+        </div>
+      </div>
+      <div class="meta-box">
+        <div class="k">👇 Sabitlenmiş Yorum (Pinned Comment)</div>
+        <div class="v" style="font-size:0.8rem; color:var(--ink-dim);">${escapeHtml(meta.pinned_comment || "")}</div>
+      </div>
+    `;
+    showToast("Belgesel metni hazırlandı ✓");
+  } catch(e) {
+    box.innerHTML = `<p style="color:var(--err); font-size:0.82rem;">Hata: ${escapeHtml(e.message)}</p>`;
+  }
+  btn.disabled = false; btn.textContent = "📝 2. Metni Üret";
+});
+
+document.getElementById("btnStartFullPipeline").addEventListener("click", async () => {
+  const topic = document.getElementById("studioTopic").value.trim();
+  if (!topic) { showToast("Lütfen bir konu girin"); return; }
+  const btn = document.getElementById("btnStartFullPipeline");
+  const research = document.getElementById("studioResearch").checked;
+  btn.disabled = true; btn.textContent = "🚀 Başlatılıyor...";
+
+  try {
+    const r = await api("/api/brain/create-job", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic, research })
+    });
+    showToast(`Video üretimi başlatıldı (${r.segments} segment) ✓`);
+    selectedJobId = r.job_id;
+    await refreshStatus();
+    await refreshJobs();
+  } catch(e) {
+    showToast("Başlatılamadı: " + e.message);
+  }
+  btn.disabled = false; btn.textContent = "🚀 3. Video & Shorts Üretimini Başlat";
+});
+
+// 4. Durum & İşler
+async function refreshStatus() {
+  try {
+    const st = await api("/api/status");
+    const pill = document.getElementById("statusPill");
+    const txt = document.getElementById("statusText");
+    const stepper = document.getElementById("pipelineStepper");
+
+    if (st.running) {
+      pill.className = "status-pill running";
+      txt.textContent = "İşleniyor: " + (st.topic_id || "");
+      stepper.style.display = "flex";
+    } else {
+      pill.className = "status-pill";
+      txt.textContent = "Sistem Boşta";
+      stepper.style.display = "none";
+    }
+  } catch(e) {}
+}
+
+async function refreshJobs() {
+  try {
+    const jobs = await api("/api/jobs");
+    currentJobs = jobs;
+    const list = document.getElementById("jobList");
+    if (!jobs.length) {
+      list.innerHTML = '<p style="color:var(--ink-muted); font-size:0.8rem;">Henüz tamamlanmış video yok.</p>';
+      return;
+    }
+    list.innerHTML = jobs.map(j => `
+      <div class="job-card ${j.job_id === selectedJobId ? 'active' : ''}" onclick="selectJob('${j.job_id}')">
+        <div class="title">${escapeHtml(j.title || j.job_id)}</div>
+        <div class="meta">
+          <span>${j.job_id}</span>
+          <div style="display:flex; gap:4px;">
+            ${j.has_video ? '<span class="badge done">16:9</span>' : ''}
+            ${j.has_short ? '<span class="badge accent">Shorts</span>' : ''}
+            ${j.pending_publish ? '<span class="badge processing">⏳ Onay Bekliyor</span>' : ''}
+          </div>
+        </div>
+      </div>
+    `).join("");
+  } catch(e) {}
+}
+
+async function selectJob(jobId) {
+  selectedJobId = jobId;
+  refreshJobs();
+  const el = document.getElementById("jobDetail");
+  try {
+    const d = await api(`/api/jobs/${jobId}`);
+    const meta = d.metadata || {};
+    const crit = d.critic;
+    const fc = d.factcheck;
+
+    el.innerHTML = `
+      <div class="detail-container">
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <span class="badge done">🤖 Made with AI</span>
+          <span class="badge done">⚖️ Politika Uyumlu</span>
+          ${crit && crit.overall ? `<span class="badge ${crit.overall >= 7 ? 'done' : 'processing'}">🎯 Critic: ${crit.overall}/10</span>` : ''}
+          ${fc ? `<span class="badge ${fc.ok ? 'done' : 'failed'}">🔍 Fact-Check: ${fc.ok ? 'Doğrulandı' : 'Denetlendi'}</span>` : ''}
+          ${d.has_short ? '<span class="badge accent">📱 9:16 Shorts Hazır</span>' : ''}
+        </div>
+
+        <!-- Video Oynatıcı Sekmeleri -->
+        <div>
+          <div class="media-tabs">
+            <button class="media-tab-btn active" onclick="switchMediaTab('tab169')">🎬 Yatay Video (16:9)</button>
+            ${d.has_short ? '<button class="media-tab-btn" onclick="switchMediaTab(\'tabShorts\')">📱 Dikey Shorts (9:16)</button>' : ''}
+          </div>
+
+          <div id="tab169" class="media-view">
+            ${d.has_video ? `<video controls src="/api/jobs/${jobId}/video" style="max-height:360px;"></video>` : '<p style="color:var(--ink-muted);">Video render edilmedi.</p>'}
+          </div>
+
+          ${d.has_short ? `
+            <div id="tabShorts" class="media-view" style="display:none;">
+              <div style="max-width:240px;">
+                <video controls src="/api/jobs/${jobId}/short" style="width:100%; max-height:420px;"></video>
+              </div>
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- İndirme & Aksiyon Linkleri -->
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          ${d.has_video ? `<a href="/api/jobs/${jobId}/video" class="btn secondary small" target="_blank">📥 16:9 İndir</a>` : ''}
+          ${d.has_short ? `<a href="/api/jobs/${jobId}/short" class="btn secondary small" target="_blank">📥 Shorts İndir</a>` : ''}
+          ${d.has_subtitles ? `<a href="/api/jobs/${jobId}/subtitles" class="btn secondary small" target="_blank">📄 Altyazı (.srt)</a>` : ''}
+          ${!d.has_short && d.has_video ? `<button class="btn small" onclick="makeShort('${jobId}')">✂️ Shorts Üret</button>` : ''}
+          ${d.upload && d.upload.url ? `<a href="${d.upload.url}" class="btn secondary small" target="_blank">▶️ YouTube'da Aç</a>` : ''}
+          ${d.upload && d.upload.privacy_status !== 'public' ? `<button class="btn small" onclick="publishJob('${jobId}')">✅ Yayınla (Public Yap)</button>` : ''}
+        </div>
+
+        <!-- Metadata & Açıklama Kutusu -->
+        <div class="meta-box">
+          <div class="k">
+            <span>📌 YouTube Başlığı</span>
+            <button class="copy-btn" onclick="copyText('${escapeHtml(meta.title || '')}')">Kopyala</button>
+          </div>
+          <div class="v" style="font-weight:600; color:#60a5fa;">${escapeHtml(meta.title || '(Başlık yok)')}</div>
+        </div>
+
+        <div class="meta-box">
+          <div class="k">
+            <span>👇 Sabitlenmiş Yorum</span>
+            <button class="copy-btn" onclick="copyText('${escapeHtml(meta.pinned_comment || '')}')">Kopyala</button>
+          </div>
+          <div class="v" style="font-size:0.82rem;">${escapeHtml(meta.pinned_comment || '(Sabitlenmiş yorum yok)')}</div>
+        </div>
+
+        <div class="meta-box">
+          <div class="k">
+            <span>📋 YouTube Açıklaması (Kaynaklar & Yasal Uyarı)</span>
+            <button class="copy-btn" onclick="copyText('${escapeHtml(meta.description || '')}')">Kopyala</button>
+          </div>
+          <div class="v" style="font-size:0.8rem; white-space:pre-wrap; max-height:160px; overflow-y:auto; color:var(--ink-dim);">${escapeHtml(meta.description || '(Açıklama yok)')}</div>
+        </div>
+      </div>
+    `;
+  } catch(e) {}
+}
+
+function switchMediaTab(tabId) {
+  document.querySelectorAll(".media-tab-btn").forEach(b => b.classList.remove("active"));
+  event.target.classList.add("active");
+  document.getElementById("tab169").style.display = tabId === "tab169" ? "block" : "none";
+  const ts = document.getElementById("tabShorts");
+  if (ts) ts.style.display = tabId === "tabShorts" ? "block" : "none";
+}
+
+function copyText(txt) {
+  navigator.clipboard.writeText(txt);
+  showToast("Panoya kopyalandı ✓");
+}
+
+async function sendChatMessage() {
+  const input = document.getElementById("chatInput");
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = "";
+  const box = document.getElementById("chatMessages");
+
+  box.insertAdjacentHTML("beforeend", `
+    <div style="align-self:flex-end; background:var(--accent); color:#fff; padding:8px 12px; border-radius:10px; max-width:85%;">${escapeHtml(msg)}</div>
+  `);
+  const loadingId = "chat-loading-" + Date.now();
+  box.insertAdjacentHTML("beforeend", `<div id="${loadingId}" style="color:var(--ink-muted); font-size:0.8rem;">Araştırılıyor (canlı kaynaklar taranıyor)...</div>`);
+  box.scrollTop = box.scrollHeight;
+
+  try {
+    const res = await api("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: msg, language: "tr" })
+    });
+    document.getElementById(loadingId).remove();
+    const v = res.verification;
+    const badge = v ? `<div style="margin-top:6px; font-size:0.7rem; color:var(--ink-muted);">Doğrulama: ${v.confidence} (${v.matched_sources} bağımsız kaynak)</div>` : "";
+    const srcs = (res.sources || []).slice(0, 6).map(s => `<a href="${s}" target="_blank" style="display:block; font-size:0.7rem; color:var(--accent);">${s}</a>`).join("");
+    box.insertAdjacentHTML("beforeend", `
+      <div style="align-self:flex-start; background:var(--surface-2); padding:10px 12px; border-radius:10px; max-width:90%;">
+        <div style="white-space:pre-wrap;">${escapeHtml(res.answer || "(yanıt üretilemedi)")}</div>
+        ${badge}
+        ${srcs ? `<div style="margin-top:8px;">${srcs}</div>` : ""}
+        ${res.tts_ready_text ? `<button class="copy-btn" style="margin-top:8px;" onclick="copyText('${escapeHtml(res.tts_ready_text).replace(/'/g, "\\'")}')">TTS'e Hazır Metni Kopyala</button>` : ""}
+      </div>
+    `);
+  } catch (e) {
+    document.getElementById(loadingId).remove();
+    box.insertAdjacentHTML("beforeend", `<div style="color:#f87171; font-size:0.8rem;">Hata: ${escapeHtml(e.message)}</div>`);
+  }
+  box.scrollTop = box.scrollHeight;
+}
+
+async function publishJob(jobId) {
+  if (!confirm("Bu video herkese açık (public) yapılacak. Emin misin?")) return;
+  showToast("Yayınlanıyor...");
+  try {
+    await api(`/api/jobs/${jobId}/publish`, { method: "POST" });
+    showToast("Video herkese açık yayınlandı ✓");
+    selectJob(jobId);
+    refreshJobs();
+  } catch(e) {
+    showToast("Hata: " + e.message);
+  }
+}
+
+async function makeShort(jobId) {
+  showToast("Shorts klibi üretiliyor...");
+  try {
+    await api(`/api/jobs/${jobId}/make-short`, { method: "POST" });
+    showToast("Shorts hazırlandı ✓");
+    selectJob(jobId);
+  } catch(e) {
+    showToast("Hata: " + e.message);
+  }
+}
+
+// Video Efektleri (animasyonlu altyazı / motion graphics / geçişler / sabit altyazı)
+async function loadEffectsSettings() {
+  try {
+    const s = await api("/api/edit-settings");
+    const caps = s.animated_captions || {};
+    const mg = s.motion_graphics || {};
+    const trans = s.transitions || {};
+    document.getElementById("fx_captions_enabled").checked = !!caps.enabled;
+    document.getElementById("fx_mg_enabled").checked = !!mg.enabled;
+    document.getElementById("fx_mg_max_stat").value = mg.max_stat_callouts ?? 4;
+    document.getElementById("fx_mg_title_card").checked = !!mg.title_card_intro;
+    document.getElementById("fx_trans_enabled").checked = trans.enabled !== false;
+    document.getElementById("fx_trans_type").value = Array.isArray(trans.type) ? trans.type[0] : (trans.type || "fade");
+    document.getElementById("fx_trans_duration").value = trans.duration ?? 0.5;
+    document.getElementById("fx_burn_subtitles").checked = !!s.burn_subtitles;
+  } catch (e) {
+    showToast("Efekt ayarları yüklenemedi: " + e.message);
+  }
+}
+
+document.getElementById("saveEffectsBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("saveEffectsBtn");
+  btn.disabled = true; btn.textContent = "Kaydediliyor...";
+  try {
+    const current = await api("/api/edit-settings");
+    const payload = {
+      animated_captions: { ...(current.animated_captions || {}), enabled: document.getElementById("fx_captions_enabled").checked },
+      motion_graphics: {
+        ...(current.motion_graphics || {}),
+        enabled: document.getElementById("fx_mg_enabled").checked,
+        max_stat_callouts: parseInt(document.getElementById("fx_mg_max_stat").value) || 0,
+        title_card_intro: document.getElementById("fx_mg_title_card").checked,
+      },
+      transitions: {
+        ...(current.transitions || {}),
+        enabled: document.getElementById("fx_trans_enabled").checked,
+        type: document.getElementById("fx_trans_type").value,
+        duration: parseFloat(document.getElementById("fx_trans_duration").value) || 0.5,
+      },
+      burn_subtitles: document.getElementById("fx_burn_subtitles").checked,
+    };
+    await api("/api/edit-settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    showToast("Efekt ayarları kaydedildi ✓ (bir sonraki üretimde geçerli)");
+  } catch (e) {
+    showToast("Kaydedilemedi: " + e.message);
+  }
+  btn.disabled = false; btn.textContent = "Efektleri Kaydet";
+});
+
+// Başlatma
+checkOllama();
+loadPresets();
+refreshStatus();
+refreshJobs();
+setInterval(refreshStatus, 3000);
+</script>
+
+</body>
+</html>

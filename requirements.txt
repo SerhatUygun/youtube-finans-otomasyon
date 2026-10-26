@@ -1,0 +1,52 @@
+# --- Faz 1: script, TTS, altyazı, montaj, YouTube taslak yükleme ---
+
+# LLM (script + metadata)
+anthropic>=0.40.0
+
+# TTS - ses klonlama
+# Not: orijinal Coqui "TTS" paketi Python 3.12'yi desteklemiyor (<3.12 sinirli).
+# "coqui-tts" (idiap toplulugu forku) ayni "TTS" namespace'ini kullanir ve 3.12 destekler.
+coqui-tts>=0.24.0
+soundfile>=0.12.1
+# transformers 5.x, coqui-tts'in beklediği bazı 4.x dahili API'lerini kaldırdı (isin_mps_friendly).
+transformers>=4.57,<5
+# PyTorch 2.9+ ile torchaudio'nun ses IO'su için torchcodec gerekiyor.
+torchcodec
+
+# Altyazı
+faster-whisper>=1.0.3
+
+# Video montaj
+ffmpeg-python>=0.2.0
+
+# YouTube Data API v3
+google-api-python-client>=2.140.0
+google-auth-httplib2>=0.2.0
+google-auth-oauthlib>=1.2.0
+
+# Web arayüzü
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+
+# Görsel üretim (Faz 2 - Flux.1-schnell)
+diffusers>=0.31.0
+accelerate>=1.1.0
+sentencepiece>=0.2.0
+protobuf>=4.25.0
+# Wan2.1 GGUF quantize transformer yüklemesi (diffusers GGUFQuantizationConfig)
+gguf>=0.10.0
+# diffusers Wan pipeline'ının prompt temizliği (prompt_clean -> ftfy.fix_text)
+ftfy
+# Wan hızlandırma LoRA'sı (lightx2v) yüklemesi — diffusers load_lora_weights PEFT ister
+peft>=0.14.0
+
+# Genel
+python-dotenv>=1.0.1
+pyyaml>=6.0.2
+pydub>=0.25.1
+requests>=2.31.0
+
+# PyTorch CUDA build kurulumu ayrı yapılır (bkz. scripts/setup_env.ps1)
+# RTX 50-serisi (Blackwell, sm_120) icin CUDA 12.8+ tekerlekleri gerekir.
+imageio
+imageio-ffmpeg
